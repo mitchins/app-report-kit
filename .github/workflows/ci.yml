@@ -55,19 +55,21 @@ jobs:
           test_binary="${xctest_bundle}/Contents/MacOS/$(basename "${xctest_bundle}" .xctest)"
           mkdir -p coverage
           xcrun llvm-cov show -instr-profile "${profdata}" "${test_binary}" > coverage/coveragereport.txt
+      - name: Install SonarScanner CLI
+        run: brew install sonar-scanner
       - name: Submit Swift coverage and analysis to SonarCloud
         if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: SonarSource/sonarcloud-github-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-        with:
-          args: >
-            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
-            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.projectBaseDir=swift
-            -Dsonar.sources=Sources
-            -Dsonar.tests=Tests
+        working-directory: ${{ github.workspace }}
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }} \
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }} \
+            -Dsonar.projectBaseDir=swift \
+            -Dsonar.sources=Sources \
+            -Dsonar.tests=Tests \
             -Dsonar.swift.coverage.reportPaths=coverage/coveragereport.txt
