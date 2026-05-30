@@ -41,7 +41,7 @@ export function isAuthorized(token: string | null, expected: string): boolean {
 
   let mismatch = 0;
   for (let index = 0; index < token.length; index += 1) {
-    mismatch |= token.charCodeAt(index) ^ expected.charCodeAt(index);
+    mismatch |= (token.codePointAt(index) ?? 0) ^ (expected.codePointAt(index) ?? 0);
   }
 
   return mismatch === 0;
