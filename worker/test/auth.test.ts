@@ -78,5 +78,7 @@ describe('auth helpers', () => {
     expect(isAuthorized('WRONG_KEY', 'TEST_APP_REPORT_KEY')).toBe(false);
     expect(isAuthorized(null, 'TEST_APP_REPORT_KEY')).toBe(false);
     expect(isAuthorized('TEST_APP_REPORT_KEY extra', 'TEST_APP_REPORT_KEY')).toBe(false);
+    expect(isAuthorized('🔒_TOKEN', '🔒_TOKEN')).toBe(true);
+    expect(isAuthorized('🔑_TOKEN', '🔒_TOKEN')).toBe(false);
   });
 });
