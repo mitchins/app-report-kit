@@ -1,0 +1,73 @@
+{
+  "runtimeMode": "production",
+  "apps": [
+    {
+      "appId": "justcards",
+      "bearerKeyBinding": "JUSTCARDS_PROD_REPORT_KEY",
+      "github": {
+        "owner": "your-github-owner",
+        "repo": "private-intake-repo"
+      },
+      "defaultLabels": [
+        "team:solo"
+      ],
+      "allowedKinds": [
+        "bug",
+        "feature",
+        "feedback"
+      ],
+      "maxPayloadSizeBytes": 32768,
+      "rateLimit": {
+        "mode": "binding",
+        "windowSeconds": 3600,
+        "maxRequests": 6,
+        "bindingName": "REPORT_RATE_LIMITER"
+      },
+      "attachmentPolicy": {
+        "maxAttachmentBytes": 262144,
+        "maxAttachmentCount": 2,
+        "allowInlineData": true,
+        "allowRemoteUrls": true
+      },
+      "dedupe": {
+        "mode": "kv",
+        "windowSeconds": 86400,
+        "bindingName": "REPORT_DEDUPE_KV"
+      }
+    },
+    {
+      "appId": "justcards-debug",
+      "bearerKeyBinding": "JUSTCARDS_DEBUG_REPORT_KEY",
+      "github": {
+        "owner": "your-github-owner",
+        "repo": "private-intake-repo"
+      },
+      "defaultLabels": [
+        "env:debug"
+      ],
+      "allowedKinds": [
+        "bug",
+        "feature",
+        "feedback"
+      ],
+      "maxPayloadSizeBytes": 32768,
+      "rateLimit": {
+        "mode": "binding",
+        "windowSeconds": 300,
+        "maxRequests": 20,
+        "bindingName": "REPORT_RATE_LIMITER"
+      },
+      "attachmentPolicy": {
+        "maxAttachmentBytes": 131072,
+        "maxAttachmentCount": 2,
+        "allowInlineData": true,
+        "allowRemoteUrls": true
+      },
+      "dedupe": {
+        "mode": "kv",
+        "windowSeconds": 3600,
+        "bindingName": "REPORT_DEDUPE_KV"
+      }
+    }
+  ]
+}
