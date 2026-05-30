@@ -9,6 +9,20 @@ public struct FeedbackForm: View {
     private let showsSeverityPicker: Bool
     private let screenContext: String?
 
+    init(
+        model: FeedbackFormViewModel,
+        copy: FeedbackFormCopy = .standard,
+        style: FeedbackFormStyle = .standard,
+        showsSeverityPicker: Bool = true,
+        screenContext: String? = nil
+    ) {
+        _model = StateObject(wrappedValue: model)
+        self.copy = copy
+        self.style = style
+        self.showsSeverityPicker = showsSeverityPicker
+        self.screenContext = screenContext
+    }
+
     public init(
         client: AppReportClient,
         initialKind: FeedbackReportKind = .bug,
@@ -17,18 +31,18 @@ public struct FeedbackForm: View {
         copy: FeedbackFormCopy = .standard,
         style: FeedbackFormStyle = .standard
     ) {
-        _model = StateObject(
-            wrappedValue: FeedbackFormViewModel(
+        self.init(
+            model: FeedbackFormViewModel(
                 client: client,
                 initialKind: initialKind,
                 copy: copy,
                 screenContext: screenContext
-            )
+            ),
+            copy: copy,
+            style: style,
+            showsSeverityPicker: showsSeverityPicker,
+            screenContext: screenContext
         )
-        self.copy = copy
-        self.style = style
-        self.showsSeverityPicker = showsSeverityPicker
-        self.screenContext = screenContext
     }
 
     public var body: some View {

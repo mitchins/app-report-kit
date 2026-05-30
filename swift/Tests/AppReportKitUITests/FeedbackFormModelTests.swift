@@ -1,6 +1,7 @@
 import XCTest
 @testable import AppReportKit
 @testable import AppReportKitUI
+import SwiftUI
 
 private let reportEndpointURL = URL(string: TestURLFactory.reportEndpoint)!
 
@@ -69,6 +70,84 @@ final class FeedbackFormModelTests: XCTestCase {
 
         XCTAssertEqual(model.errorMessage, "Please enter details before sending.")
         XCTAssertEqual(transport.sendCallCount, 0)
+    }
+
+    func testFeedbackFormBodyCoversSeverityScreenContextAndStyleBranches() {
+        let transport = MockTransport()
+        let model = FeedbackFormViewModel(
+            client: makeClient(transport: transport),
+            initialKind: .feature,
+            copy: .standard,
+            screenContext: "Composer"
+        )
+        model.notes = "Need an export button."
+        model.email = "person@example.com"
+
+        let styledForm = FeedbackForm(
+            model: model,
+            copy: .standard,
+            style: FeedbackFormStyle(
+                foregroundColor: .primary,
+                backgroundColor: .secondary,
+                accentColor: .accentColor,
+                font: .body
+            ),
+            showsSeverityPicker: false,
+            screenContext: "Composer"
+        )
+
+        _ = styledForm.body
+
+        model.isSubmitting = true
+        _ = styledForm.body
+
+        model.isSubmitting = false
+        model.isSubmitted = true
+        _ = styledForm.body
+
+        model.isSubmitted = false
+        model.errorMessage = "Unable to send right now."
+        _ = styledForm.body
+    }
+
+    func testFeedbackFormBodyCoversEmptyNotesPlaceholderBranch() {
+        let transport = MockTransport()
+        let model = FeedbackFormViewModel(
+            client: makeClient(transport: transport),
+            initialKind: .bug,
+            copy: .standard,
+            screenContext: nil
+        )
+
+        let form = FeedbackForm(
+            model: model,
+            copy: .standard,
+            style: .standard,
+            showsSeverityPicker: true,
+            screenContext: nil
+        )
+
+        _ = form.body
+    }
+
+    func testFeedbackFormStyleStandardAndCustomValues() {
+        let standard = FeedbackFormStyle.standard
+        XCTAssertNil(standard.foregroundColor)
+        XCTAssertNil(standard.backgroundColor)
+        XCTAssertNil(standard.accentColor)
+        XCTAssertNil(standard.font)
+
+        let custom = FeedbackFormStyle(
+            foregroundColor: .primary,
+            backgroundColor: .secondary,
+            accentColor: .accentColor,
+            font: .headline
+        )
+
+        XCTAssertNotNil(custom.foregroundColor)
+        XCTAssertNotNil(custom.backgroundColor)
+        XCTAssertNotNil(custom.accentColor)
+        XCTAssertNotNil(custom.font)
     }
 
     private func makeClient(transport: MockTransport) -> AppReportClient {
