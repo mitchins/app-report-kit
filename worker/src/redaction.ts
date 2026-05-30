@@ -38,15 +38,15 @@ const REDACTION_RULES: Array<{ pattern: RegExp; replacement: string }> = [
     replacement: '[REDACTED_SECRET]'
   },
   {
-    pattern: new RegExp(`${passwordKey}\\s*=\\s*([^\\s&]+)`, 'gi'),
+    pattern: new RegExp(String.raw`${passwordKey}\s*=\s*([^\s&]+)`, 'gi'),
     replacement: `${passwordKey}=[REDACTED_SECRET]`
   },
   {
-    pattern: new RegExp(`${apiKeyNamePattern}\\s*=\\s*([^\\s&]+)`, 'gi'),
+    pattern: new RegExp(String.raw`${apiKeyNamePattern}\s*=\s*([^\s&]+)`, 'gi'),
     replacement: 'api_key=[REDACTED_SECRET]'
   },
   {
-    pattern: new RegExp(`${tokenKey}\\s*=\\s*([^\\s&]+)`, 'gi'),
+    pattern: new RegExp(String.raw`${tokenKey}\s*=\s*([^\s&]+)`, 'gi'),
     replacement: `${tokenKey}=[REDACTED_SECRET]`
   },
   {

@@ -5,7 +5,9 @@ public protocol FeedbackDiagnosticsProvider {
 }
 
 public struct EmptyFeedbackDiagnosticsProvider: FeedbackDiagnosticsProvider {
-    public init() {}
+    public init() {
+        // Intentionally empty: the default provider exposes no extra diagnostics.
+    }
 
     public func makeDiagnostics() -> [String: String] {
         // The default provider intentionally emits no diagnostics so host apps

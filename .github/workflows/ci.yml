@@ -16,10 +16,10 @@ jobs:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -28,7 +28,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - name: Prefix worker coverage paths for Sonar
+        run: |
+          perl -0pi -e 's#^SF:src/#SF:worker/src/#mg' coverage/lcov.info
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: worker-coverage
@@ -36,12 +39,13 @@ jobs:
           if-no-files-found: ignore
 
   swift:
+    needs: worker
     runs-on: macos-latest
     defaults:
       run:
         working-directory: swift
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
       - run: swift --version
@@ -55,17 +59,20 @@ jobs:
           test_binary="${xctest_bundle}/Contents/MacOS/$(basename "${xctest_bundle}" .xctest)"
           mkdir -p coverage
           xcrun llvm-cov show -instr-profile "${profdata}" "${test_binary}" > coverage/coveragereport.txt
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: worker-coverage
+          path: ${{ github.workspace }}/worker/coverage
       - name: Install SonarScanner CLI
         run: brew install sonar-scanner
-      - name: Submit Swift coverage and analysis to SonarCloud
+      - name: Submit Swift and worker coverage analysis to SonarCloud
         if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        working-directory: ${{ github.workspace }}/swift
+        working-directory: ${{ github.workspace }}
         run: |
           sonar-scanner \
-            -Dproject.settings=../sonar-project.properties \
-            -Dsonar.sources=Sources \
-            -Dsonar.tests=Tests \
-            -Dsonar.swift.coverage.reportPaths=coverage/coveragereport.txt
+            -Dproject.settings=sonar-project.properties \
+            -Dsonar.swift.coverage.reportPaths=swift/coverage/coveragereport.txt \
+            -Dsonar.javascript.lcov.reportPaths=worker/coverage/lcov.info
