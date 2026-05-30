@@ -2,6 +2,8 @@ import XCTest
 @testable import AppReportKit
 @testable import AppReportKitUI
 
+private let reportEndpointURL = URL(string: TestURLFactory.reportEndpoint)!
+
 @MainActor
 final class FeedbackFormModelTests: XCTestCase {
     func testValidationBlocksEmptyNotesSubmission() async throws {
@@ -9,14 +11,14 @@ final class FeedbackFormModelTests: XCTestCase {
         let model = FeedbackFormViewModel(
             client: makeClient(transport: transport),
             initialKind: .bug,
-            copy: .default,
+            copy: .standard,
             screenContext: "InvoiceEditor"
         )
 
         await model.submit()
 
         XCTAssertFalse(model.canSubmit)
-        XCTAssertEqual(model.errorMessage, FeedbackFormCopy.default.validationErrorMessage)
+        XCTAssertEqual(model.errorMessage, FeedbackFormCopy.standard.validationErrorMessage)
         XCTAssertEqual(transport.sendCallCount, 0)
     }
 
@@ -25,7 +27,7 @@ final class FeedbackFormModelTests: XCTestCase {
         let model = FeedbackFormViewModel(
             client: makeClient(transport: transport),
             initialKind: .feature,
-            copy: .default,
+            copy: .standard,
             screenContext: "Settings"
         )
         model.notes = "Please add batch export."
@@ -41,18 +43,18 @@ final class FeedbackFormModelTests: XCTestCase {
     }
 
     func testDefaultCopyExists() {
-        XCTAssertFalse(FeedbackFormCopy.default.notesLabel.isEmpty)
-        XCTAssertFalse(FeedbackFormCopy.default.notesPlaceholder.isEmpty)
-        XCTAssertFalse(FeedbackFormCopy.default.submitButtonTitle.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.notesLabel.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.notesPlaceholder.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.submitButtonTitle.isEmpty)
     }
 
     func testCustomCopyCanSupplyNotesLabelPlaceholderAndValidationMessage() async throws {
         let transport = MockTransport()
-        let copy = FeedbackFormCopy(
-            notesLabel: "What should we know?",
-            notesPlaceholder: "Tell us the steps, bug, or request.",
-            validationErrorMessage: "Please enter details before sending."
-        )
+        let copy = FeedbackFormCopy {
+            $0.notesLabel = "What should we know?"
+            $0.notesPlaceholder = "Tell us the steps, bug, or request."
+            $0.validationErrorMessage = "Please enter details before sending."
+        }
         let model = FeedbackFormViewModel(
             client: makeClient(transport: transport),
             initialKind: .bug,
@@ -71,18 +73,22 @@ final class FeedbackFormModelTests: XCTestCase {
 
     private func makeClient(transport: MockTransport) -> AppReportClient {
         AppReportClient(
-            endpointURL: URL(string: "https://reports.example.com/v1/report")!,
+            endpointURL: reportEndpointURL,
             appId: "justcards",
             bearerToken: "TEST_APP_REPORT_KEY",
             metadataProvider: FixedMetadataProvider(
                 metadata: FeedbackMetadata(
-                    appVersion: "1.2.3",
-                    build: "42",
-                    osName: "iOS",
-                    osVersion: "18.5",
-                    deviceModel: "iPhone16,2",
-                    locale: "en-AU",
-                    clientVersion: "0.1.0"
+                    app: .init(
+                        version: "1.2.3",
+                        build: "42",
+                        clientVersion: "0.1.0"
+                    ),
+                    device: .init(
+                        osName: "iOS",
+                        osVersion: "18.5",
+                        model: "iPhone16,2",
+                        locale: "en-AU"
+                    )
                 )
             ),
             transport: transport
@@ -95,14 +101,18 @@ private struct FixedMetadataProvider: FeedbackMetadataProviding {
 
     func makeMetadata(screen: String?) -> FeedbackMetadata {
         FeedbackMetadata(
-            appVersion: metadata.appVersion,
-            build: metadata.build,
-            osName: metadata.osName,
-            osVersion: metadata.osVersion,
-            deviceModel: metadata.deviceModel,
-            locale: metadata.locale,
-            clientVersion: metadata.clientVersion,
-            screen: screen
+            app: .init(
+                version: metadata.appVersion,
+                build: metadata.build,
+                clientVersion: metadata.clientVersion,
+                screen: screen
+            ),
+            device: .init(
+                osName: metadata.osName,
+                osVersion: metadata.osVersion,
+                model: metadata.deviceModel,
+                locale: metadata.locale
+            )
         )
     }
 }
@@ -110,8 +120,12 @@ private struct FixedMetadataProvider: FeedbackMetadataProviding {
 private final class MockTransport: AppReportTransport {
     var sendCallCount = 0
 
-    func send(request: URLRequest, body: Data) async throws -> AppReportTransportResponse {
+    func send(request _: URLRequest, body _: Data) async throws -> AppReportTransportResponse {
         sendCallCount += 1
         return AppReportTransportResponse(statusCode: 202, data: Data(#"{"ok":true}"#.utf8))
     }
+}
+
+private enum TestURLFactory {
+    static let reportEndpoint = "https://reports.example.com/v1/report"
 }

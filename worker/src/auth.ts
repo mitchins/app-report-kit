@@ -8,8 +8,13 @@ export function extractBearerToken(request: Request): string | null {
     return null;
   }
 
-  const [scheme, token] = header.split(/\s+/, 2);
-  if (scheme?.toLowerCase() !== 'bearer' || !token) {
+  const parts = header.trim().split(/\s+/);
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [scheme, token] = parts;
+  if (scheme.toLowerCase() !== 'bearer' || !token) {
     return null;
   }
 
@@ -30,5 +35,14 @@ export function isAuthorized(token: string | null, expected: string): boolean {
     return false;
   }
 
-  return token === expected;
+  if (token.length !== expected.length) {
+    return false;
+  }
+
+  let mismatch = 0;
+  for (let index = 0; index < token.length; index += 1) {
+    mismatch |= token.charCodeAt(index) ^ expected.charCodeAt(index);
+  }
+
+  return mismatch === 0;
 }

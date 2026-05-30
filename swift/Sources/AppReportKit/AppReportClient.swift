@@ -54,12 +54,14 @@ public final class AppReportClient {
         let report = FeedbackReport(
             appId: appId,
             kind: kind,
-            severity: severity,
             notes: notes,
-            email: email,
             metadata: metadataProvider.makeMetadata(screen: screen),
-            diagnostics: diagnosticsProvider?.makeDiagnostics() ?? [:],
-            attachments: attachments
+            submission: .init(
+                severity: severity,
+                email: email,
+                diagnostics: diagnosticsProvider?.makeDiagnostics() ?? [:],
+                attachments: attachments
+            )
         )
 
         return try await submit(report)
@@ -72,14 +74,16 @@ public final class AppReportClient {
         }
 
         let normalizedReport = FeedbackReport(
-            appId: report.appId,
+            appId: appId,
             kind: report.kind,
-            severity: report.severity,
             notes: normalizedNotes,
-            email: report.email?.trimmingCharacters(in: .whitespacesAndNewlines),
             metadata: report.metadata,
-            diagnostics: report.diagnostics ?? [:],
-            attachments: report.attachments
+            submission: .init(
+                severity: report.severity,
+                email: report.email?.trimmingCharacters(in: .whitespacesAndNewlines),
+                diagnostics: report.diagnostics ?? [:],
+                attachments: report.attachments
+            )
         )
 
         let body = try jsonEncoder.encode(normalizedReport)
@@ -106,4 +110,3 @@ private let jsonEncoder: JSONEncoder = {
     encoder.outputFormatting = [.sortedKeys]
     return encoder
 }()
-

@@ -18,6 +18,5 @@ public struct FeedbackFormStyle {
         self.font = font
     }
 
-    public static let `default` = FeedbackFormStyle()
+    public static let standard = FeedbackFormStyle()
 }
-

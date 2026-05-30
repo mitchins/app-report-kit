@@ -73,7 +73,7 @@ function validateAttachment(attachment: FeedbackAttachment, appConfig: AppConfig
     throw new SafeHttpError(413, 'Request could not be accepted.', 'rejected_oversized_attachment');
   }
 
-  if (!attachment.url && !attachment.dataBase64) {
+  if (!attachment.url && !attachment.dataBase64 && !attachment.sha256) {
     throw new SafeHttpError(400, 'Request could not be accepted.', 'rejected_invalid_request');
   }
 }
@@ -122,6 +122,7 @@ export async function processRequest(
   dependencies: WorkerDependencies
 ): Promise<RequestHandlingResult> {
   let githubAttempted = false;
+  let issueCreated = false;
 
   try {
     requireRoute(request);
@@ -131,11 +132,12 @@ export async function processRequest(
       throw new SafeHttpError(401, 'Request could not be accepted.', 'rejected_missing_auth');
     }
 
-    const rawBody = await request.text();
-    const bodyByteLength = new TextEncoder().encode(rawBody).length;
+    const rawBodyBuffer = await request.arrayBuffer();
+    const bodyByteLength = rawBodyBuffer.byteLength;
     if (bodyByteLength > ABSOLUTE_MAX_REQUEST_BYTES) {
       throw new SafeHttpError(413, 'Request could not be accepted.', 'rejected_oversized_payload');
     }
+    const rawBody = new TextDecoder().decode(rawBodyBuffer);
 
     const parsedBody = parseJsonBody(rawBody);
     const appConfig = requireAppConfig(parsedBody, env);
@@ -155,7 +157,13 @@ export async function processRequest(
       appConfig.rateLimit
     );
     if (!rateLimitResult.allowed) {
-      throw new SafeHttpError(429, 'Request could not be accepted.', 'rejected_rate_limited');
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil(rateLimitResult.retryAfterSeconds ?? appConfig.rateLimit.windowSeconds)
+      );
+      throw new SafeHttpError(429, 'Request could not be accepted.', 'rejected_rate_limited', {
+        'retry-after': String(retryAfterSeconds)
+      });
     }
 
     const fingerprint = await buildFingerprint(report);
@@ -193,15 +201,26 @@ export async function processRequest(
     githubAttempted = true;
     try {
       const createdIssue = await dependencies.githubClient.createIssue(issueRequest);
-      await dependencies.duplicateStore.record(
-        duplicateKey,
-        {
-          fingerprint,
-          issueNumber: createdIssue.issueNumber,
-          recordedAt: submittedAt.toISOString()
-        },
-        appConfig.dedupe
-      );
+      issueCreated = true;
+
+      try {
+        await dependencies.duplicateStore.record(
+          duplicateKey,
+          {
+            fingerprint,
+            issueNumber: createdIssue.issueNumber,
+            recordedAt: submittedAt.toISOString()
+          },
+          appConfig.dedupe
+        );
+      } catch {
+        return {
+          response: acceptedResponse(),
+          category: 'accepted_without_dedupe_record',
+          githubAttempted: true,
+          issueCreated: true
+        };
+      }
 
       return {
         response: acceptedResponse(),
@@ -217,23 +236,23 @@ export async function processRequest(
         response: failureResponse(502),
         category: 'failed_github',
         githubAttempted,
-        issueCreated: false
+        issueCreated
       };
     }
   } catch (error) {
     if (error instanceof SafeHttpError) {
       return {
-        response: failureResponse(error.status),
+        response: failureResponse(error.status, error.headers),
         category: error.category,
         githubAttempted,
-        issueCreated: false
+        issueCreated
       };
     }
     return {
       response: failureResponse(500),
       category: 'failed_internal',
       githubAttempted,
-      issueCreated: false
+      issueCreated
     };
   }
 }

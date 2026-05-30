@@ -1,3 +1,5 @@
+import { redactString } from './redaction';
+
 import type { AppConfig, FeedbackAttachment, ReportPayload } from './types';
 
 function toTitleCase(value: string): string {
@@ -14,7 +16,7 @@ function summaryFromNotes(notes: string): string {
 }
 
 function escapeCell(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\n/g, '<br/>');
+  return value.replaceAll('|', String.raw`\|`).replaceAll('\n', '<br/>');
 }
 
 function renderTable(rows: Array<[string, string | undefined]>): string {
@@ -64,6 +66,8 @@ function renderAttachments(attachments: FeedbackAttachment[]): string {
 function sanitizeAttachmentUrl(url: string): string {
   try {
     const parsed = new URL(url);
+    parsed.username = '';
+    parsed.password = '';
     parsed.search = '';
     parsed.hash = '';
     return parsed.toString();
@@ -96,6 +100,15 @@ export function renderIssueBody(input: {
   enrichment?: Record<string, string> | null;
 }): string {
   const { report, fingerprint, submittedAt, enrichment } = input;
+  const diagnosticRows: Array<[string, string]> = [];
+
+  for (const [key, value] of Object.entries(report.diagnostics ?? {})) {
+    diagnosticRows.push([redactString(key), redactString(value)]);
+  }
+
+  for (const [key, value] of Object.entries(enrichment ?? {})) {
+    diagnosticRows.push([redactString(key), redactString(value)]);
+  }
 
   const sections = [
     '# In-app report',
@@ -130,12 +143,7 @@ export function renderIssueBody(input: {
     ]),
     '',
     '## Diagnostics / context',
-    renderTable(
-      Object.entries({
-        ...(report.diagnostics ?? {}),
-        ...(enrichment ?? {})
-      })
-    ),
+    renderTable(diagnosticRows),
     '',
     '## Attachments',
     renderAttachments(report.attachments)
@@ -143,4 +151,3 @@ export function renderIssueBody(input: {
 
   return sections.join('\n');
 }
-

@@ -2,9 +2,10 @@ import { z } from 'zod';
 
 import { SafeHttpError } from './errors';
 
-import type { AppConfig, Env, LoadedConfig, WorkerConfig } from './types';
+import type { Env, LoadedConfig, WorkerConfig } from './types';
 
 const secretBindingNameSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/);
+const configCache = new WeakMap<Env, LoadedConfig>();
 
 const appConfigSchema = z.object({
   appId: z.string().min(1),
@@ -62,7 +63,7 @@ const appConfigSchema = z.object({
 
 const workerConfigSchema = z
   .object({
-    runtimeMode: z.enum(['local', 'production']).default('local'),
+    runtimeMode: z.enum(['local', 'production']),
     apps: z.array(appConfigSchema)
   })
   .strict();
@@ -80,15 +81,33 @@ function assertProductionBindings(config: WorkerConfig): void {
 }
 
 export function loadConfig(env: Env): LoadedConfig {
+  const cached = configCache.get(env);
+  if (cached) {
+    return cached;
+  }
+
   try {
-    const parsed = workerConfigSchema.parse(
-      JSON.parse(env.APP_CONFIG_JSON ?? '{"runtimeMode":"local","apps":[]}')
-    ) as WorkerConfig;
+    if (typeof env.APP_CONFIG_JSON !== 'string' || env.APP_CONFIG_JSON.trim().length === 0) {
+      throw new SafeHttpError(500, 'Request could not be accepted.', 'failed_config');
+    }
+
+    const parsed = workerConfigSchema.parse(JSON.parse(env.APP_CONFIG_JSON));
     assertProductionBindings(parsed);
-    return {
+    const appIds = new Set<string>();
+    for (const app of parsed.apps) {
+      if (appIds.has(app.appId)) {
+        throw new SafeHttpError(500, 'Request could not be accepted.', 'failed_config');
+      }
+      appIds.add(app.appId);
+    }
+
+    const loaded: LoadedConfig = {
       runtimeMode: parsed.runtimeMode,
-      apps: new Map(parsed.apps.map((app) => [app.appId, app satisfies AppConfig]))
+      apps: new Map(parsed.apps.map((app) => [app.appId, app]))
     };
+    configCache.set(env, loaded);
+
+    return loaded;
   } catch (error) {
     if (error instanceof SafeHttpError) {
       throw error;

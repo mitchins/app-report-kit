@@ -4,6 +4,44 @@ import Darwin
 #endif
 
 public struct FeedbackMetadata: Codable, Equatable {
+    public struct AppInfo: Codable, Equatable {
+        public let version: String
+        public let build: String
+        public let clientVersion: String
+        public let screen: String?
+
+        public init(
+            version: String,
+            build: String,
+            clientVersion: String,
+            screen: String? = nil
+        ) {
+            self.version = version
+            self.build = build
+            self.clientVersion = clientVersion
+            self.screen = screen
+        }
+    }
+
+    public struct DeviceInfo: Codable, Equatable {
+        public let osName: String
+        public let osVersion: String
+        public let model: String
+        public let locale: String
+
+        public init(
+            osName: String,
+            osVersion: String,
+            model: String,
+            locale: String
+        ) {
+            self.osName = osName
+            self.osVersion = osVersion
+            self.model = model
+            self.locale = locale
+        }
+    }
+
     public let appVersion: String
     public let build: String
     public let osName: String
@@ -13,24 +51,15 @@ public struct FeedbackMetadata: Codable, Equatable {
     public let clientVersion: String
     public let screen: String?
 
-    public init(
-        appVersion: String,
-        build: String,
-        osName: String,
-        osVersion: String,
-        deviceModel: String,
-        locale: String,
-        clientVersion: String,
-        screen: String? = nil
-    ) {
-        self.appVersion = appVersion
-        self.build = build
-        self.osName = osName
-        self.osVersion = osVersion
-        self.deviceModel = deviceModel
-        self.locale = locale
-        self.clientVersion = clientVersion
-        self.screen = screen
+    public init(app: AppInfo, device: DeviceInfo) {
+        appVersion = app.version
+        build = app.build
+        osName = device.osName
+        osVersion = device.osVersion
+        deviceModel = device.model
+        locale = device.locale
+        clientVersion = app.clientVersion
+        screen = app.screen
     }
 }
 
@@ -90,14 +119,18 @@ public struct SystemFeedbackMetadataProvider: FeedbackMetadataProviding {
         let info = bundle.infoDictionary ?? [:]
         let os = operatingSystemProvider()
         return FeedbackMetadata(
-            appVersion: (info["CFBundleShortVersionString"] as? String) ?? "unknown",
-            build: (info["CFBundleVersion"] as? String) ?? "unknown",
-            osName: os.name,
-            osVersion: os.version,
-            deviceModel: deviceModelProvider(),
-            locale: localeProvider().identifier,
-            clientVersion: AppReportKitVersion.current,
-            screen: screen
+            app: .init(
+                version: (info["CFBundleShortVersionString"] as? String) ?? "unknown",
+                build: (info["CFBundleVersion"] as? String) ?? "unknown",
+                clientVersion: AppReportKitVersion.current,
+                screen: screen
+            ),
+            device: .init(
+                osName: os.name,
+                osVersion: os.version,
+                model: deviceModelProvider(),
+                locale: localeProvider().identifier
+            )
         )
     }
 }
@@ -106,9 +139,9 @@ enum DeviceModel {
     static var current: String {
         var systemInfo = utsname()
         uname(&systemInfo)
-        let machine = withUnsafePointer(to: &systemInfo.machine) { pointer in
-            pointer.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
+        let machine = withUnsafeBytes(of: &systemInfo.machine) {
+            String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
         }
-        return machine
+        return machine.isEmpty ? "unknown" : machine
     }
 }

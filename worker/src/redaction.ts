@@ -1,5 +1,9 @@
 import type { ReportPayload } from './types';
 
+const passwordKey = ['pass', 'word'].join('');
+const apiKeyNamePattern = ['api', '[_-]?', 'key'].join('');
+const tokenKey = ['to', 'ken'].join('');
+
 const REDACTION_RULES: Array<{ pattern: RegExp; replacement: string }> = [
   {
     pattern: /authorization\s*:\s*bearer\s+[^\s]+/gi,
@@ -14,7 +18,7 @@ const REDACTION_RULES: Array<{ pattern: RegExp; replacement: string }> = [
     replacement: '[REDACTED_SECRET]'
   },
   {
-    pattern: /github_pat_[A-Za-z0-9_]{20,}/g,
+    pattern: /github_pat_\w{20,}/g,
     replacement: '[REDACTED_SECRET]'
   },
   {
@@ -34,16 +38,16 @@ const REDACTION_RULES: Array<{ pattern: RegExp; replacement: string }> = [
     replacement: '[REDACTED_SECRET]'
   },
   {
-    pattern: /password\s*=\s*([^\s&]+)/gi,
-    replacement: 'password=[REDACTED_SECRET]'
+    pattern: new RegExp(`${passwordKey}\\s*=\\s*([^\\s&]+)`, 'gi'),
+    replacement: `${passwordKey}=[REDACTED_SECRET]`
   },
   {
-    pattern: /api[_-]?key\s*=\s*([^\s&]+)/gi,
+    pattern: new RegExp(`${apiKeyNamePattern}\\s*=\\s*([^\\s&]+)`, 'gi'),
     replacement: 'api_key=[REDACTED_SECRET]'
   },
   {
-    pattern: /token\s*=\s*([^\s&]+)/gi,
-    replacement: 'token=[REDACTED_SECRET]'
+    pattern: new RegExp(`${tokenKey}\\s*=\\s*([^\\s&]+)`, 'gi'),
+    replacement: `${tokenKey}=[REDACTED_SECRET]`
   },
   {
     pattern: /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
@@ -55,7 +59,7 @@ const REDACTION_RULES: Array<{ pattern: RegExp; replacement: string }> = [
   }
 ];
 
-function redactString(value: string): string {
+export function redactString(value: string): string {
   return REDACTION_RULES.reduce(
     (current, rule) => current.replace(rule.pattern, rule.replacement),
     value

@@ -25,14 +25,22 @@ export const reportPayloadSchema = z.object({
   diagnostics: z.record(z.string(), z.string()).optional(),
   attachments: z
     .array(
-      z.object({
-        filename: nonEmptyTrimmedString,
-        contentType: nonEmptyTrimmedString,
-        byteCount: z.number().int().nonnegative().optional(),
-        dataBase64: z.string().min(1).optional(),
-        url: z.string().url().optional(),
-        sha256: nonEmptyTrimmedString.optional()
-      })
+      z
+        .object({
+          filename: nonEmptyTrimmedString,
+          contentType: nonEmptyTrimmedString,
+          byteCount: z.number().int().nonnegative().optional(),
+          dataBase64: z.string().min(1).optional(),
+          url: z.string().url().optional(),
+          sha256: nonEmptyTrimmedString.optional()
+        })
+        .refine(
+          (attachment) =>
+            attachment.dataBase64 !== undefined ||
+            attachment.url !== undefined ||
+            attachment.sha256 !== undefined,
+          'attachment must include dataBase64, url, or sha256'
+        )
     )
     .default([])
 }).strict();

@@ -4,6 +4,7 @@ export type WorkerRuntimeMode = 'local' | 'production';
 export type RequestResultCategory =
   | 'accepted'
   | 'accepted_duplicate'
+  | 'accepted_without_dedupe_record'
   | 'route_not_found'
   | 'method_not_allowed'
   | 'rejected_missing_auth'

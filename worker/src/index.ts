@@ -1,7 +1,9 @@
 import { ConfiguredDuplicateStore, MemoryDuplicateStore } from './dedupe-store';
+import { SafeHttpError } from './errors';
 import { FetchGitHubIssueClient } from './github';
 import { handleRequest } from './handler';
 import { ConfiguredRateLimiter, MemoryRateLimiter } from './rate-limit';
+import { failureResponse } from './response';
 
 import type { Env, ReportEnrichmentProvider } from './types';
 
@@ -15,13 +17,24 @@ const enrichmentProvider: ReportEnrichmentProvider = {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const githubClient = new FetchGitHubIssueClient(String(env.GITHUB_TOKEN ?? ''));
-    return handleRequest(request, env, {
-      githubClient,
-      rateLimiter: new ConfiguredRateLimiter(env, rateLimiter),
-      duplicateStore: new ConfiguredDuplicateStore(env, duplicateStore),
-      enrichmentProvider,
-      now: () => new Date()
-    });
+    try {
+      if (typeof env.GITHUB_TOKEN !== 'string' || env.GITHUB_TOKEN.length === 0) {
+        throw new SafeHttpError(500, 'Request could not be accepted.', 'failed_config');
+      }
+
+      const githubClient = new FetchGitHubIssueClient(env.GITHUB_TOKEN);
+      return handleRequest(request, env, {
+        githubClient,
+        rateLimiter: new ConfiguredRateLimiter(env, rateLimiter),
+        duplicateStore: new ConfiguredDuplicateStore(env, duplicateStore),
+        enrichmentProvider,
+        now: () => new Date()
+      });
+    } catch (error) {
+      if (error instanceof SafeHttpError) {
+        return failureResponse(error.status, error.headers);
+      }
+      return failureResponse(500);
+    }
   }
 };

@@ -88,10 +88,10 @@ If you need light copy changes without rebuilding the form, inject `FeedbackForm
 FeedbackForm(
     client: client,
     screenContext: "InvoiceEditor",
-    copy: FeedbackFormCopy(
-        notesLabel: "What happened?",
-        notesPlaceholder: "Share the steps, expected result, and actual result."
-    )
+    copy: FeedbackFormCopy {
+        $0.notesLabel = "What happened?"
+        $0.notesPlaceholder = "Share the steps, expected result, and actual result."
+    }
 )
 ```
 

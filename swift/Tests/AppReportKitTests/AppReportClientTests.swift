@@ -1,6 +1,9 @@
 import XCTest
 @testable import AppReportKit
 
+private let reportEndpointURL = URL(string: TestURLFactory.reportEndpoint)!
+private let customEndpointURL = URL(string: TestURLFactory.customReportEndpoint)!
+
 final class AppReportClientTests: XCTestCase {
     func testEncodesValidReportPayload() async throws {
         let transport = MockTransport()
@@ -60,14 +63,18 @@ final class AppReportClientTests: XCTestCase {
         let transport = MockTransport()
         let metadataProvider = FixedMetadataProvider(
             metadata: FeedbackMetadata(
-                appVersion: "9.9.9",
-                build: "999",
-                osName: "iOS",
-                osVersion: "18.5",
-                deviceModel: "iPhone16,2",
-                locale: "en-AU",
-                clientVersion: "0.1.0-test",
-                screen: "Composer"
+                app: .init(
+                    version: "9.9.9",
+                    build: "999",
+                    clientVersion: "0.1.0-test",
+                    screen: "Composer"
+                ),
+                device: .init(
+                    osName: "iOS",
+                    osVersion: "18.5",
+                    model: "iPhone16,2",
+                    locale: "en-AU"
+                )
             )
         )
         let client = makeClient(transport: transport, metadataProvider: metadataProvider)
@@ -94,13 +101,13 @@ final class AppReportClientTests: XCTestCase {
     func testSendsBearerTokenAndInjectableEndpoint() async throws {
         let transport = MockTransport()
         let client = makeClient(
-            endpointURL: URL(string: "https://reports.example.com/custom")!,
+            endpointURL: customEndpointURL,
             transport: transport
         )
 
         _ = try await client.submit(kind: .bug, notes: "A report")
 
-        XCTAssertEqual(transport.lastRequest?.url?.absoluteString, "https://reports.example.com/custom")
+        XCTAssertEqual(transport.lastRequest?.url?.absoluteString, TestURLFactory.customReportEndpoint)
         XCTAssertEqual(transport.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer TEST_APP_REPORT_KEY")
     }
 
@@ -135,9 +142,9 @@ final class AppReportClientTests: XCTestCase {
     }
 
     private func makeClient(
-        endpointURL: URL = URL(string: "https://reports.example.com/v1/report")!,
+        endpointURL: URL = reportEndpointURL,
         transport: MockTransport,
-        metadataProvider: FeedbackMetadataProviding = FixedMetadataProvider.default
+        metadataProvider: FeedbackMetadataProviding = FixedMetadataProvider.standard
     ) -> AppReportClient {
         AppReportClient(
             endpointURL: endpointURL,
@@ -159,29 +166,36 @@ private struct FixedDiagnosticsProvider: FeedbackDiagnosticsProvider {
 private struct FixedMetadataProvider: FeedbackMetadataProviding {
     let metadata: FeedbackMetadata
 
-    static let `default` = FixedMetadataProvider(
+    static let standard = FixedMetadataProvider(
         metadata: FeedbackMetadata(
-            appVersion: "1.2.3",
-            build: "42",
-            osName: "iOS",
-            osVersion: "18.5",
-            deviceModel: "iPhone16,2",
-            locale: "en-AU",
-            clientVersion: "0.1.0",
-            screen: nil
+            app: .init(
+                version: "1.2.3",
+                build: "42",
+                clientVersion: "0.1.0"
+            ),
+            device: .init(
+                osName: "iOS",
+                osVersion: "18.5",
+                model: "iPhone16,2",
+                locale: "en-AU"
+            )
         )
     )
 
     func makeMetadata(screen: String?) -> FeedbackMetadata {
         FeedbackMetadata(
-            appVersion: metadata.appVersion,
-            build: metadata.build,
-            osName: metadata.osName,
-            osVersion: metadata.osVersion,
-            deviceModel: metadata.deviceModel,
-            locale: metadata.locale,
-            clientVersion: metadata.clientVersion,
-            screen: screen ?? metadata.screen
+            app: .init(
+                version: metadata.appVersion,
+                build: metadata.build,
+                clientVersion: metadata.clientVersion,
+                screen: screen ?? metadata.screen
+            ),
+            device: .init(
+                osName: metadata.osName,
+                osVersion: metadata.osVersion,
+                model: metadata.deviceModel,
+                locale: metadata.locale
+            )
         )
     }
 }
@@ -211,4 +225,9 @@ private final class MockTransport: AppReportTransport {
 
         return try JSONDecoder().decode(FeedbackReport.self, from: lastBody)
     }
+}
+
+private enum TestURLFactory {
+    static let reportEndpoint = "https://reports.example.com/v1/report"
+    static let customReportEndpoint = "https://reports.example.com/custom"
 }

@@ -2,10 +2,10 @@
   "name": "app-report-kit-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-30",
-  "vars": {
-    "APP_CONFIG_JSON": "{\"runtimeMode\":\"local\",\"apps\":[]}"
-  },
-  // Example only: APP_CONFIG_JSON defaults expect binding names REPORT_RATE_LIMITER
+  // Set APP_CONFIG_JSON explicitly per environment. This repository does not ship a
+  // deployable default because production/local runtime mode and app bindings must
+  // be configured intentionally.
+  // Example only: APP_CONFIG_JSON can reference binding names REPORT_RATE_LIMITER
   // and REPORT_DEDUPE_KV in production mode.
   // Bind production rate limiting and KV using Cloudflare's current product-specific
   // configuration syntax in your own deployment environment.

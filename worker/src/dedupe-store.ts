@@ -73,7 +73,11 @@ export class ConfiguredDuplicateStore implements DuplicateStore {
       return null;
     }
 
-    return JSON.parse(value) as DuplicateRecord;
+    try {
+      return JSON.parse(value) as DuplicateRecord;
+    } catch {
+      throw new SafeHttpError(503, 'Request could not be accepted.', 'failed_dedupe_unavailable');
+    }
   }
 
   async record(key: string, record: DuplicateRecord, policy: DedupePolicy): Promise<void> {
@@ -87,7 +91,7 @@ export class ConfiguredDuplicateStore implements DuplicateStore {
     }
 
     await binding.put(key, JSON.stringify(record), {
-      expirationTtl: policy.windowSeconds
+      expirationTtl: Math.max(policy.windowSeconds, 60)
     });
   }
 }

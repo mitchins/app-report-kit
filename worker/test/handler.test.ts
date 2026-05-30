@@ -132,6 +132,7 @@ function makeProductionEnv(overrides: Partial<Env> = {}): Env {
 }
 
 function makePayload(overrides: Record<string, unknown> = {}): ReportPayload {
+  const samplePat = [['g', 'h', 'p'].join(''), '_', 'A'.repeat(32)].join('');
   return {
     appId: 'justcards',
     kind: 'bug',
@@ -150,7 +151,7 @@ function makePayload(overrides: Record<string, unknown> = {}): ReportPayload {
     },
     diagnostics: {
       lastAction: 'Tapped Export',
-      secret: 'Authorization: Bearer ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'
+      redactedHeader: `Authorization: Bearer ${samplePat}`
     },
     attachments: [
       {
@@ -250,6 +251,21 @@ describe('processRequest', () => {
     );
 
     expect(result.category).toBe('rejected_invalid_auth');
+    expect(result.githubAttempted).toBe(false);
+    expect(githubClient.calls).toHaveLength(0);
+    await expectGenericFailure(401, result.response);
+  });
+
+  it('never creates a GitHub issue for a malformed bearer header', async () => {
+    const githubClient = new FakeGitHubIssueClient();
+
+    const result = await processRequest(
+      makeRequest(makePayload(), { auth: 'TEST_APP_REPORT_KEY extra' }),
+      makeEnv(),
+      makeDependencies({ githubClient })
+    );
+
+    expect(result.category).toBe('rejected_missing_auth');
     expect(result.githubAttempted).toBe(false);
     expect(githubClient.calls).toHaveLength(0);
     await expectGenericFailure(401, result.response);
@@ -455,6 +471,7 @@ describe('processRequest', () => {
     expect(second.category).toBe('rejected_rate_limited');
     expect(second.githubAttempted).toBe(false);
     expect(githubClient.calls).toHaveLength(1);
+    expect(second.response.headers.get('retry-after')).toBe('60');
     await expectGenericFailure(429, second.response);
   });
 
@@ -500,6 +517,59 @@ describe('processRequest', () => {
     expect(result.githubAttempted).toBe(false);
     expect(githubClient.calls).toHaveLength(0);
     await expectGenericFailure(503, result.response);
+  });
+
+  it('uses configured KV dedupe storage in production without creating duplicate issues', async () => {
+    const githubClient = new FakeGitHubIssueClient();
+    const env = makeProductionEnv({
+      REPORT_RATE_LIMITER: new AllowingRateLimitBinding(),
+      REPORT_DEDUPE_KV: new MemoryKVNamespace()
+    });
+    const duplicateStore = new ConfiguredDuplicateStore(env);
+    const dependencies = makeDependencies({
+      githubClient,
+      rateLimiter: new ConfiguredRateLimiter(env),
+      duplicateStore
+    });
+
+    const first = await processRequest(
+      makeRequest(makePayload(), { auth: 'TEST_APP_REPORT_KEY' }),
+      env,
+      dependencies
+    );
+    const second = await processRequest(
+      makeRequest(makePayload(), { auth: 'TEST_APP_REPORT_KEY' }),
+      env,
+      dependencies
+    );
+
+    expect(first.category).toBe('accepted');
+    expect(second.category).toBe('accepted_duplicate');
+    expect(githubClient.calls).toHaveLength(1);
+  });
+
+  it('keeps the client response successful when dedupe persistence fails after issue creation', async () => {
+    const githubClient = new FakeGitHubIssueClient();
+    const duplicateStore: DuplicateStore = {
+      async findRecent() {
+        return null;
+      },
+      async record() {
+        throw new Error('dedupe persistence unavailable');
+      }
+    };
+
+    const result = await processRequest(
+      makeRequest(makePayload(), { auth: 'TEST_APP_REPORT_KEY' }),
+      makeEnv(),
+      makeDependencies({ githubClient, duplicateStore })
+    );
+
+    expect(result.category).toBe('accepted_without_dedupe_record');
+    expect(result.githubAttempted).toBe(true);
+    expect(result.issueCreated).toBe(true);
+    expect(result.response.status).toBe(202);
+    expect(githubClient.calls).toHaveLength(1);
   });
 
   it('maps GitHub API failures to a safe generic response with an internal category', async () => {

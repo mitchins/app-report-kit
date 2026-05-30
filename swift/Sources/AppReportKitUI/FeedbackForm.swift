@@ -14,8 +14,8 @@ public struct FeedbackForm: View {
         initialKind: FeedbackReportKind = .bug,
         showsSeverityPicker: Bool = true,
         screenContext: String? = nil,
-        copy: FeedbackFormCopy = .default,
-        style: FeedbackFormStyle = .default
+        copy: FeedbackFormCopy = .standard,
+        style: FeedbackFormStyle = .standard
     ) {
         _model = StateObject(
             wrappedValue: FeedbackFormViewModel(
@@ -65,6 +65,7 @@ public struct FeedbackForm: View {
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 8)
                                 .padding(.leading, 4)
+                                .allowsHitTesting(false)
                         }
 
                         TextEditor(text: $model.notes)

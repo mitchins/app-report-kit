@@ -1,6 +1,25 @@
 import Foundation
 
 public struct FeedbackReport: Codable, Equatable {
+    public struct SubmissionContext: Equatable {
+        public let severity: FeedbackSeverity
+        public let email: String?
+        public let diagnostics: [String: String]
+        public let attachments: [FeedbackAttachment]
+
+        public init(
+            severity: FeedbackSeverity = .normal,
+            email: String? = nil,
+            diagnostics: [String: String] = [:],
+            attachments: [FeedbackAttachment] = []
+        ) {
+            self.severity = severity
+            self.email = email
+            self.diagnostics = diagnostics
+            self.attachments = attachments
+        }
+    }
+
     public let appId: String
     public let kind: FeedbackReportKind
     public let severity: FeedbackSeverity
@@ -13,21 +32,18 @@ public struct FeedbackReport: Codable, Equatable {
     public init(
         appId: String,
         kind: FeedbackReportKind,
-        severity: FeedbackSeverity = .normal,
         notes: String,
-        email: String? = nil,
         metadata: FeedbackMetadata,
-        diagnostics: [String: String] = [:],
-        attachments: [FeedbackAttachment] = []
+        submission: SubmissionContext = .init()
     ) {
         self.appId = appId
         self.kind = kind
-        self.severity = severity
+        severity = submission.severity
         self.notes = notes
-        self.email = email?.nilIfBlank
+        email = submission.email?.nilIfBlank
         self.metadata = metadata
-        self.diagnostics = diagnostics.isEmpty ? nil : diagnostics
-        self.attachments = attachments
+        diagnostics = submission.diagnostics.isEmpty ? nil : submission.diagnostics
+        attachments = submission.attachments
     }
 }
 
@@ -37,4 +53,3 @@ private extension String {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
-

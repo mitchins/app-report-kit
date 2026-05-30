@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   worker:
     runs-on: ubuntu-latest
@@ -14,12 +17,14 @@ jobs:
         working-directory: worker
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -37,6 +42,32 @@ jobs:
         working-directory: swift
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: swift --version
       - run: swift build
-      - run: swift test
+      - run: swift test --enable-code-coverage
+      - name: Generate Swift coverage report
+        run: |
+          set -euo pipefail
+          profdata=$(find .build -path '*/debug/codecov/default.profdata' -print -quit)
+          xctest_bundle=$(find .build -path '*/debug/*.xctest' -type d -print -quit)
+          test_binary="${xctest_bundle}/Contents/MacOS/$(basename "${xctest_bundle}" .xctest)"
+          mkdir -p coverage
+          xcrun llvm-cov show -instr-profile "${profdata}" "${test_binary}" > coverage/coveragereport.txt
+      - name: Submit Swift coverage and analysis to SonarCloud
+        if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: SonarSource/sonarcloud-github-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectBaseDir=swift
+            -Dsonar.sources=Sources
+            -Dsonar.tests=Tests
+            -Dsonar.swift.coverage.reportPaths=coverage/coveragereport.txt

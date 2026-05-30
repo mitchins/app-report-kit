@@ -5,6 +5,8 @@ interface GitHubIssueResponse {
   html_url: string;
 }
 
+const GITHUB_TIMEOUT_MS = 10_000;
+
 export class FetchGitHubIssueClient implements GitHubIssueClient {
   constructor(
     private readonly token: string,
@@ -12,10 +14,14 @@ export class FetchGitHubIssueClient implements GitHubIssueClient {
   ) {}
 
   async createIssue(request: IssueCreationRequest): Promise<GitHubIssueResult> {
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), GITHUB_TIMEOUT_MS);
+
     const response = await this.fetchImpl(
       `https://api.github.com/repos/${request.owner}/${request.repo}/issues`,
       {
         method: 'POST',
+        signal: abortController.signal,
         headers: {
           authorization: `Bearer ${this.token}`,
           accept: 'application/vnd.github+json',
@@ -28,7 +34,7 @@ export class FetchGitHubIssueClient implements GitHubIssueClient {
           labels: request.labels
         })
       }
-    );
+    ).finally(() => clearTimeout(timeoutId));
 
     if (!response.ok) {
       throw new Error(`GitHub issue creation failed with status ${response.status}`);
@@ -41,4 +47,3 @@ export class FetchGitHubIssueClient implements GitHubIssueClient {
     };
   }
 }
-

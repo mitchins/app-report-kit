@@ -57,7 +57,7 @@ const report: ReportPayload = {
       filename: 'screenshot.png',
       contentType: 'image/png',
       byteCount: 128,
-      url: 'https://cdn.example.com/reports/screenshot.png?token=secret',
+      url: 'https://user:pass@cdn.example.com/reports/screenshot.png?token=secret',
       sha256: 'deadbeef'
     }
   ]
