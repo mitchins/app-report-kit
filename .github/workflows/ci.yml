@@ -62,11 +62,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        working-directory: ${{ github.workspace }}
+        working-directory: ${{ github.workspace }}/swift
         run: |
           sonar-scanner \
-            -Dproject.settings=sonar-project.properties \
-            -Dsonar.projectBaseDir=swift \
+            -Dproject.settings=../sonar-project.properties \
             -Dsonar.sources=Sources \
             -Dsonar.tests=Tests \
             -Dsonar.swift.coverage.reportPaths=coverage/coveragereport.txt

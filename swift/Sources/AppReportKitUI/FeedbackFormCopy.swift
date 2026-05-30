@@ -13,7 +13,9 @@ public struct FeedbackFormCopy: Equatable, Sendable {
     public var validationErrorMessage = "Please add notes or steps before sending."
     public var submissionErrorMessage = "Unable to send right now."
 
-    public init(configure: (inout FeedbackFormCopy) -> Void = { _ in }) {
+    public init(configure: (inout FeedbackFormCopy) -> Void = { _ in
+        // Intentionally empty: the standard copy uses the stored default values.
+    }) {
         configure(&self)
     }
 
