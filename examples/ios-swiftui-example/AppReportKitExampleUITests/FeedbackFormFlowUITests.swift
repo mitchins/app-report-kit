@@ -51,13 +51,22 @@ final class FeedbackFormFlowUITests: XCTestCase {
         notes.typeText("Steps to reproduce:\n1. Open Invoice Editor\n2. Tap Export\n3. Nothing happens")
 
         let email = app.textFields["appreportkit.email-field"]
-        XCTAssertTrue(email.exists)
+        XCTAssertTrue(email.waitForExistence(timeout: 5))
         email.tap()
         email.typeText("person@example.com")
 
-        // Dismiss keyboard before tapping submit so it's out of the way
-        app.swipeDown()
-        Thread.sleep(forTimeInterval: 0.3)
+        // Dismiss keyboard before tapping submit so the button stays visible.
+        let keyboard = app.keyboards.firstMatch
+        if app.keyboards.buttons["Return"].exists {
+            app.keyboards.buttons["Return"].tap()
+        } else {
+            app.swipeDown()
+        }
+
+        if keyboard.exists {
+            let keyboardGone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: keyboard)
+            wait(for: [keyboardGone], timeout: 5)
+        }
 
         let submit = app.buttons["appreportkit.submit-button"]
         XCTAssertTrue(submit.waitForExistence(timeout: 5))

@@ -12,7 +12,8 @@ struct SupportView: View {
         endpointURL: URL(string: "https://reports.example.com/v1/report")!,
         appId: "justcards",
         bearerToken: "EXAMPLE_APP_REPORT_KEY",
-        diagnosticsProvider: ExampleDiagnosticsProvider()
+        diagnosticsProvider: ExampleDiagnosticsProvider(),
+        transport: ExampleTransport()
     )
 
     var body: some View {

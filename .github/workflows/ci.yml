@@ -18,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -47,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
+          fetch-depth: 0
           persist-credentials: false
       - run: swift --version
       - run: swift build
@@ -61,15 +63,23 @@ jobs:
             -derivedDataPath DerivedData \
             -resultBundlePath DerivedData/Logs/Test/AppReportKitExample.xcresult
       - name: Capture UI snapshot via simctl
+        continue-on-error: true
         if: always()
         run: |
           mkdir -p ${{ github.workspace }}/examples/ios-swiftui-example/Screenshots
-          # Find the booted iPhone 17 Pro simulator UDID
-          UDID=$(xcrun simctl list devices | grep "iPhone 17 Pro" | grep "Booted" | grep -v "Max" | grep -v "17e" | head -1 | grep -oE '[A-F0-9-]{36}')
+          # Find the iPhone 17 Pro simulator UDID from JSON for stability.
+          UDID=$(xcrun simctl list devices --json | jq -r '.devices[] | .[] | select(.name == "iPhone 17 Pro") | .udid' | head -1)
           if [ -z "$UDID" ]; then
-            echo "No booted iPhone 17 Pro found; skipping simctl screenshot"
+            echo "No iPhone 17 Pro simulator found; skipping simctl screenshot"
             exit 0
           fi
+          BUNDLE_ID=$(xcodebuild -project "${{ github.workspace }}/examples/ios-swiftui-example/AppReportKitExample.xcodeproj" \
+            -scheme AppReportKitExample -showBuildSettings | awk -F' = ' '/PRODUCT_BUNDLE_IDENTIFIER/{print $2; exit}')
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+          xcrun simctl launch "$UDID" "$BUNDLE_ID" -appreportkit-ui-testing
+          sleep 2
           echo "Capturing screenshot from $UDID"
           xcrun simctl io "$UDID" screenshot \
             "${{ github.workspace }}/examples/ios-swiftui-example/Screenshots/feedback-form-iPhone17Pro.png"
@@ -81,27 +91,44 @@ jobs:
           path: ${{ github.workspace }}/examples/ios-swiftui-example/Screenshots/feedback-form-iPhone17Pro.png
           if-no-files-found: ignore
       - name: Generate Swift coverage report
+        if: always()
         run: |
           set -euo pipefail
-          profdata=$(find .build -path '*/debug/codecov/default.profdata' -print -quit)
-          xctest_bundle=$(find .build -path '*/debug/*.xctest' -type d -print -quit)
-          test_binary="${xctest_bundle}/Contents/MacOS/$(basename "${xctest_bundle}" .xctest)"
           mkdir -p coverage
-          xcrun llvm-cov show -instr-profile "${profdata}" "${test_binary}" > coverage/coveragereport.txt
+          if [ -d .build ]; then
+            profdata=$(find .build -path '*/debug/codecov/default.profdata' -print -quit)
+            xctest_bundle=$(find .build -path '*/debug/*.xctest' -type d -print -quit)
+          else
+            profdata=""
+            xctest_bundle=""
+          fi
+          if [ -n "${profdata}" ] && [ -n "${xctest_bundle}" ]; then
+            test_binary="${xctest_bundle}/Contents/MacOS/$(basename "${xctest_bundle}" .xctest)"
+            xcrun llvm-cov show -instr-profile "${profdata}" "${test_binary}" > coverage/coveragereport.txt
+          else
+            echo "Swift coverage artifacts were not available."
+          fi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: always()
+        continue-on-error: true
         with:
           name: worker-coverage
           path: ${{ github.workspace }}/worker/coverage
       - name: Install SonarScanner CLI
+        if: always()
         run: brew install sonar-scanner
       - name: Submit Swift and worker coverage analysis to SonarCloud
-        if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         working-directory: ${{ github.workspace }}
         run: |
-          sonar-scanner \
-            -Dproject.settings=sonar-project.properties \
-            -Dsonar.swift.coverage.reportPaths=swift/coverage/coveragereport.txt \
-            -Dsonar.javascript.lcov.reportPaths=worker/coverage/lcov.info
+          args=(-Dproject.settings=sonar-project.properties)
+          if [ -f swift/coverage/coveragereport.txt ]; then
+            args+=(-Dsonar.swift.coverage.reportPaths=swift/coverage/coveragereport.txt)
+          fi
+          if [ -f worker/coverage/lcov.info ]; then
+            args+=(-Dsonar.javascript.lcov.reportPaths=worker/coverage/lcov.info)
+          fi
+          sonar-scanner "${args[@]}"
