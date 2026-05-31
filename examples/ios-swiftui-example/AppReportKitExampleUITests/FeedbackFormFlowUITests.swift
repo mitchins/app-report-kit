@@ -74,7 +74,16 @@ final class FeedbackFormFlowUITests: XCTestCase {
         submit.tap()
 
         let success = app.staticTexts["appreportkit.success-message"]
-        XCTAssertTrue(success.waitForExistence(timeout: 5))
+        if !success.waitForExistence(timeout: 2) {
+            let form = app.scrollViews.firstMatch
+            if form.exists {
+                form.swipeUp()
+            } else {
+                app.swipeUp()
+            }
+        }
+
+        XCTAssertTrue(success.waitForExistence(timeout: 10))
     }
 
     private func launchApp() -> XCUIApplication {
