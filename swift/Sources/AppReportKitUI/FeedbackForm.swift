@@ -53,6 +53,7 @@ public struct FeedbackForm: View {
                         Text(kind.rawValue.capitalized).tag(kind)
                     }
                 }
+                .accessibilityIdentifier("appreportkit.kind-picker")
 
                 if showsSeverityPicker {
                     Picker(copy.severityLabel, selection: $model.severity) {
@@ -60,6 +61,7 @@ public struct FeedbackForm: View {
                             Text(severity.rawValue.capitalized).tag(severity)
                         }
                     }
+                    .accessibilityIdentifier("appreportkit.severity-picker")
                 }
 
                 if let screenContext, !screenContext.isEmpty {
@@ -68,6 +70,7 @@ public struct FeedbackForm: View {
                         Spacer()
                         Text(screenContext)
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("appreportkit.context-value")
                     }
                 }
 
@@ -84,10 +87,12 @@ public struct FeedbackForm: View {
 
                         TextEditor(text: $model.notes)
                             .frame(minHeight: 140)
+                            .accessibilityIdentifier("appreportkit.notes-editor")
                     }
                 }
 
                 TextField(copy.emailPlaceholder, text: $model.email)
+                    .accessibilityIdentifier("appreportkit.email-field")
                     #if os(iOS)
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
@@ -110,16 +115,19 @@ public struct FeedbackForm: View {
                     }
                 }
                 .disabled(!model.canSubmit)
+                .accessibilityIdentifier("appreportkit.submit-button")
             }
 
             if model.isSubmitted {
                 Text(copy.successMessage)
                     .foregroundStyle(.green)
+                    .accessibilityIdentifier("appreportkit.success-message")
             }
 
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
+                    .accessibilityIdentifier("appreportkit.error-message")
             }
         }
         .appReportForeground(style.foregroundColor)

@@ -51,6 +51,35 @@ jobs:
       - run: swift --version
       - run: swift build
       - run: swift test --enable-code-coverage
+      - name: Run example UI tests on iPhone 17 Pro
+        working-directory: ${{ github.workspace }}/examples/ios-swiftui-example
+        run: |
+          xcodebuild test \
+            -project AppReportKitExample.xcodeproj \
+            -scheme AppReportKitExample \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -derivedDataPath DerivedData \
+            -resultBundlePath DerivedData/Logs/Test/AppReportKitExample.xcresult
+      - name: Capture UI snapshot via simctl
+        if: always()
+        run: |
+          mkdir -p ${{ github.workspace }}/examples/ios-swiftui-example/Screenshots
+          # Find the booted iPhone 17 Pro simulator UDID
+          UDID=$(xcrun simctl list devices | grep "iPhone 17 Pro" | grep "Booted" | grep -v "Max" | grep -v "17e" | head -1 | grep -oE '[A-F0-9-]{36}')
+          if [ -z "$UDID" ]; then
+            echo "No booted iPhone 17 Pro found; skipping simctl screenshot"
+            exit 0
+          fi
+          echo "Capturing screenshot from $UDID"
+          xcrun simctl io "$UDID" screenshot \
+            "${{ github.workspace }}/examples/ios-swiftui-example/Screenshots/feedback-form-iPhone17Pro.png"
+      - name: Upload UI snapshot artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: appreportkit-ui-snapshot
+          path: ${{ github.workspace }}/examples/ios-swiftui-example/Screenshots/feedback-form-iPhone17Pro.png
+          if-no-files-found: ignore
       - name: Generate Swift coverage report
         run: |
           set -euo pipefail

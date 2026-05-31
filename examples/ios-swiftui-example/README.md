@@ -1,5 +1,7 @@
 # iOS SwiftUI example
 
+This example app is a tiny UI harness for the reusable form. It uses an injected transport stub so the submission flow can be exercised without talking to GitHub.
+
 ```swift
 import AppReportKit
 import AppReportKitUI
@@ -9,7 +11,7 @@ struct SupportView: View {
     private let client = AppReportClient(
         endpointURL: URL(string: "https://reports.example.com/v1/report")!,
         appId: "justcards",
-        bearerToken: "APP_REPORT_KEY_PLACEHOLDER",
+        bearerToken: "EXAMPLE_APP_REPORT_KEY",
         diagnosticsProvider: ExampleDiagnosticsProvider()
     )
 
@@ -31,6 +33,16 @@ struct ExampleDiagnosticsProvider: FeedbackDiagnosticsProvider {
     }
 }
 ```
+
+The Xcode project for the example lives next to this README and the UI tests run on an iPhone 17 Pro simulator destination.
+
+## Snapshot
+
+The UI test saves a PNG artifact here:
+
+`Screenshots/feedback-form-iPhone17Pro.png`
+
+![AppReportKit feedback form](Screenshots/feedback-form-iPhone17Pro.png)
 
 Use the core module directly if you do not want the packaged form:
 
