@@ -225,3 +225,5 @@ No app-side code, docs, fixtures, or examples should ever contain the GitHub tok
 - `docs/security.md`
 - `docs/worker-config.example.json`
 - `examples/ios-swiftui-example/README.md`
+
+The example README includes the iPhone 17 Pro UI test snapshot artifact for the reusable form flow.

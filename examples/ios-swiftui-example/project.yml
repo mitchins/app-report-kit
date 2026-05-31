@@ -1,0 +1,42 @@
+name: AppReportKitExample
+
+options:
+  bundleIdPrefix: com.mitchins
+  deploymentTarget:
+    iOS: 15.0
+
+packages:
+  AppReportKitPackage:
+    path: ../../swift
+
+targets:
+  AppReportKitExample:
+    type: application
+    platform: iOS
+    sources:
+      - path: AppReportKitExample
+    dependencies:
+      - package: AppReportKitPackage
+        product: AppReportKit
+      - package: AppReportKitPackage
+        product: AppReportKitUI
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.mitchins.appreportkit.example
+        INFOPLIST_KEY_CFBundleDisplayName: AppReportKitExample
+    scheme:
+      testTargets:
+        - AppReportKitExampleUITests
+
+  AppReportKitExampleUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AppReportKitExampleUITests
+    dependencies:
+      - target: AppReportKitExample
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.mitchins.appreportkit.exampleUITests
