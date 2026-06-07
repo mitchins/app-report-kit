@@ -33,10 +33,49 @@ enum HTTPVersionResolver {
 }
 
 public actor NetworkRecorder {
+    public struct RecordContext: Sendable {
+        public let requestBody: Data?
+        public let taskMetadata: [String: String]
+        public let requestHTTPVersion: String?
+
+        public init(
+            requestBody: Data? = nil,
+            taskMetadata: [String: String] = [:],
+            requestHTTPVersion: String? = nil
+        ) {
+            self.requestBody = requestBody
+            self.taskMetadata = taskMetadata
+            self.requestHTTPVersion = requestHTTPVersion
+        }
+    }
+
+    public struct RecordOutcome: Sendable {
+        public let response: HTTPURLResponse?
+        public let responseBody: Data?
+        public let error: Error?
+        public let completedAt: Date?
+        public let responseHTTPVersion: String?
+
+        public init(
+            response: HTTPURLResponse? = nil,
+            responseBody: Data? = nil,
+            error: Error? = nil,
+            completedAt: Date? = nil,
+            responseHTTPVersion: String? = nil
+        ) {
+            self.response = response
+            self.responseBody = responseBody
+            self.error = error
+            self.completedAt = completedAt
+            self.responseHTTPVersion = responseHTTPVersion
+        }
+    }
+
     private let policy: NetworkCapturePolicy
     private let redactor: NetworkRedactor
     private let idProvider: @Sendable () -> String
     private var rollingBuffer: NetworkRollingBuffer
+    private static let rootPath = NSString.path(withComponents: ["", ""])
 
     public init(
         policy: NetworkCapturePolicy = .metadataOnly,
@@ -66,22 +105,24 @@ public actor NetworkRecorder {
             let (data, response) = try await operation()
             record(
                 request: request,
-                response: response as? HTTPURLResponse,
-                responseBody: data,
                 startedAt: startedAt,
-                completedAt: Date(),
-                taskMetadata: taskMetadata
+                context: .init(taskMetadata: taskMetadata),
+                outcome: .init(
+                    response: response as? HTTPURLResponse,
+                    responseBody: data,
+                    completedAt: Date()
+                )
             )
             return (data, response)
         } catch {
             record(
                 request: request,
-                response: nil,
-                responseBody: nil,
-                error: error,
                 startedAt: startedAt,
-                completedAt: Date(),
-                taskMetadata: taskMetadata
+                context: .init(taskMetadata: taskMetadata),
+                outcome: .init(
+                    error: error,
+                    completedAt: Date()
+                )
             )
             throw error
         }
@@ -89,34 +130,28 @@ public actor NetworkRecorder {
 
     public func record(
         request: URLRequest,
-        requestBody: Data? = nil,
-        response: HTTPURLResponse? = nil,
-        responseBody: Data? = nil,
-        error: Error? = nil,
         startedAt: Date,
-        completedAt: Date? = nil,
-        taskMetadata: [String: String] = [:],
-        requestHTTPVersion: String? = nil,
-        responseHTTPVersion: String? = nil
+        context: RecordContext = .init(),
+        outcome: RecordOutcome = .init()
     ) {
         let url = request.url ?? URL(string: "about:blank")!
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let requestHeaders = policy.capturesRequestHeaders ? redactor.redactHeaders(request.allHTTPHeaderFields) : []
-        let responseHeaders = policy.capturesResponseHeaders ? redactor.redactHeaders(response?.allHeaderFields) : []
+        let responseHeaders = policy.capturesResponseHeaders ? redactor.redactHeaders(outcome.response?.allHeaderFields) : []
         let requestContentType = request.value(forHTTPHeaderField: "Content-Type")
-        let responseContentType = response?.value(forHTTPHeaderField: "Content-Type")
-        let effectiveRequestBody = requestBody ?? request.httpBody
+        let responseContentType = outcome.response?.value(forHTTPHeaderField: "Content-Type")
+        let effectiveRequestBody = context.requestBody ?? request.httpBody
         let requestPreview = redactor.bodyPreview(
             from: effectiveRequestBody,
             contentType: requestContentType,
             enabled: policy.capturesRequestBodyPreview
         )
         let responsePreview = redactor.bodyPreview(
-            from: responseBody,
+            from: outcome.responseBody,
             contentType: responseContentType,
             enabled: policy.capturesResponseBodyPreview
         )
-        let failure = error.map { error in
+        let failure = outcome.error.map { error in
             let nsError = error as NSError
             return NetworkEvent.FailureDetails(
                 domain: nsError.domain,
@@ -124,39 +159,45 @@ public actor NetworkRecorder {
                 description: nsError.localizedDescription
             )
         }
-        let durationMs = completedAt.map { $0.timeIntervalSince(startedAt) * 1000 }
+        let durationMs = outcome.completedAt.map { $0.timeIntervalSince(startedAt) * 1000 }
 
         let event = NetworkEvent(
             id: idProvider(),
-            startedAt: startedAt,
-            completedAt: completedAt,
-            durationMs: durationMs,
-            method: request.httpMethod ?? "GET",
-            scheme: components?.scheme ?? "",
-            host: components?.host ?? "",
-            path: components?.path.isEmpty == false ? (components?.path ?? "") : "/",
-            queryItems: redactor.redactQueryItems(components?.queryItems ?? []),
+            timing: .init(
+                startedAt: startedAt,
+                completedAt: outcome.completedAt,
+                durationMs: durationMs
+            ),
+            target: .init(
+                method: request.httpMethod ?? "GET",
+                scheme: components?.scheme ?? "",
+                host: components?.host ?? "",
+                path: components?.path.isEmpty == false ? (components?.path ?? "") : Self.rootPath,
+                queryItems: redactor.redactQueryItems(components?.queryItems ?? [])
+            ),
             request: .init(
                 headers: requestHeaders,
                 bodyPreview: requestPreview,
                 bodySize: effectiveRequestBody?.count,
                 mimeType: requestContentType,
-                httpVersion: requestHTTPVersion
+                httpVersion: context.requestHTTPVersion
             ),
-            response: response.map { response in
+            response: outcome.response.map { response in
                 NetworkEvent.ResponseDetails(
                     statusCode: response.statusCode,
                     statusText: HTTPURLResponse.localizedString(forStatusCode: response.statusCode),
                     headers: responseHeaders,
-                    bodyPreview: responsePreview,
-                    bodySize: responseBody?.count,
-                    mimeType: responseContentType,
-                    httpVersion: responseHTTPVersion,
+                    content: .init(
+                        bodyPreview: responsePreview,
+                        bodySize: outcome.responseBody?.count,
+                        mimeType: responseContentType
+                    ),
+                    httpVersion: outcome.responseHTTPVersion,
                     redirectURL: response.value(forHTTPHeaderField: "Location")
                 )
             },
             failure: failure,
-            taskMetadata: redactor.redactMetadata(taskMetadata)
+            taskMetadata: redactor.redactMetadata(context.taskMetadata)
         )
 
         rollingBuffer.append(event)
@@ -192,23 +233,31 @@ public struct InstrumentedURLSession {
             let httpVersion = metricsCollector.httpVersion
             await recorder.record(
                 request: request,
-                response: response as? HTTPURLResponse,
-                responseBody: data,
                 startedAt: startedAt,
-                completedAt: Date(),
-                taskMetadata: taskMetadata,
-                requestHTTPVersion: httpVersion,
-                responseHTTPVersion: httpVersion
+                context: .init(
+                    taskMetadata: taskMetadata,
+                    requestHTTPVersion: httpVersion
+                ),
+                outcome: .init(
+                    response: response as? HTTPURLResponse,
+                    responseBody: data,
+                    completedAt: Date(),
+                    responseHTTPVersion: httpVersion
+                )
             )
             return (data, response)
         } catch {
             await recorder.record(
                 request: request,
-                error: error,
                 startedAt: startedAt,
-                completedAt: Date(),
-                taskMetadata: taskMetadata,
-                requestHTTPVersion: metricsCollector.httpVersion
+                context: .init(
+                    taskMetadata: taskMetadata,
+                    requestHTTPVersion: metricsCollector.httpVersion
+                ),
+                outcome: .init(
+                    error: error,
+                    completedAt: Date()
+                )
             )
             throw error
         }
@@ -225,7 +274,7 @@ private final class TaskMetricsCollector: NSObject, URLSessionTaskDelegate, @unc
 
     func urlSession(
         _ session: URLSession,
-        task: URLSessionTask,
+        task _: URLSessionTask,
         didFinishCollecting metrics: URLSessionTaskMetrics
     ) {
         let version = metrics.transactionMetrics.last.flatMap { metric in

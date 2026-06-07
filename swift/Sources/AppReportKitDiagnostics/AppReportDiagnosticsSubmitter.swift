@@ -78,7 +78,9 @@ public protocol MailAvailabilityChecking {
 }
 
 public struct SystemMailAvailabilityChecker: MailAvailabilityChecking {
-    public init() {}
+    public init() {
+        // Stateless wrapper used so mail availability stays injectable in tests.
+    }
 
     public func canSendMail() -> Bool {
         #if canImport(MessageUI) && os(iOS)
@@ -106,6 +108,47 @@ public enum DiagnosticsDeliveryPlatform: String, Sendable {
 }
 
 public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackSubmitting, FeedbackFormSupportProviding {
+    public struct Support {
+        public let diagnosticsProvider: FeedbackDiagnosticsProvider?
+        public let networkRecorder: NetworkRecorder?
+        public let screenshotProvider: FeedbackScreenshotProviding?
+
+        public init(
+            diagnosticsProvider: FeedbackDiagnosticsProvider? = nil,
+            networkRecorder: NetworkRecorder? = nil,
+            screenshotProvider: FeedbackScreenshotProviding? = nil
+        ) {
+            self.diagnosticsProvider = diagnosticsProvider
+            self.networkRecorder = networkRecorder
+            self.screenshotProvider = screenshotProvider
+        }
+    }
+
+    public struct Configuration {
+        public let bundleBuilder: DiagnosticsBundleBuilder
+        public let mailAvailabilityChecker: MailAvailabilityChecking
+        public let platform: DiagnosticsDeliveryPlatform
+        public let attachBundleToEndpoint: Bool
+        public let allowEndpointScreenshotAttachments: Bool
+        public let dateProvider: @Sendable () -> Date
+
+        public init(
+            bundleBuilder: DiagnosticsBundleBuilder = DiagnosticsBundleBuilder(),
+            mailAvailabilityChecker: MailAvailabilityChecking = SystemMailAvailabilityChecker(),
+            platform: DiagnosticsDeliveryPlatform = .current,
+            attachBundleToEndpoint: Bool = false,
+            allowEndpointScreenshotAttachments: Bool = true,
+            dateProvider: @escaping @Sendable () -> Date = Date.init
+        ) {
+            self.bundleBuilder = bundleBuilder
+            self.mailAvailabilityChecker = mailAvailabilityChecker
+            self.platform = platform
+            self.attachBundleToEndpoint = attachBundleToEndpoint
+            self.allowEndpointScreenshotAttachments = allowEndpointScreenshotAttachments
+            self.dateProvider = dateProvider
+        }
+    }
+
     public let feedbackFormSupportOptions: FeedbackFormSupportOptions
 
     private let reportBuilder: FeedbackReportBuilder
@@ -123,32 +166,25 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
 
     public init(
         reportBuilder: FeedbackReportBuilder,
-        diagnosticsProvider: FeedbackDiagnosticsProvider? = nil,
         delivery: AppReportDelivery,
-        networkRecorder: NetworkRecorder? = nil,
-        screenshotProvider: FeedbackScreenshotProviding? = nil,
-        bundleBuilder: DiagnosticsBundleBuilder = DiagnosticsBundleBuilder(),
-        mailAvailabilityChecker: MailAvailabilityChecking = SystemMailAvailabilityChecker(),
-        platform: DiagnosticsDeliveryPlatform = .current,
-        attachBundleToEndpoint: Bool = false,
-        allowEndpointScreenshotAttachments: Bool = true,
-        dateProvider: @escaping () -> Date = Date.init
+        support: Support = .init(),
+        configuration: Configuration = .init()
     ) {
         self.reportBuilder = reportBuilder
-        self.diagnosticsProvider = diagnosticsProvider
+        diagnosticsProvider = support.diagnosticsProvider
         self.delivery = delivery
-        self.networkRecorder = networkRecorder
-        self.screenshotProvider = screenshotProvider
-        self.bundleBuilder = bundleBuilder
-        self.mailAvailabilityChecker = mailAvailabilityChecker
-        self.platform = platform
-        self.attachBundleToEndpoint = attachBundleToEndpoint
-        self.allowEndpointScreenshotAttachments = allowEndpointScreenshotAttachments
-        self.dateProvider = dateProvider
-        diagnosticsRedactor = NetworkRedactor(policy: networkRecorder?.capturePolicy ?? .metadataOnly)
+        networkRecorder = support.networkRecorder
+        screenshotProvider = support.screenshotProvider
+        bundleBuilder = configuration.bundleBuilder
+        mailAvailabilityChecker = configuration.mailAvailabilityChecker
+        platform = configuration.platform
+        attachBundleToEndpoint = configuration.attachBundleToEndpoint
+        allowEndpointScreenshotAttachments = configuration.allowEndpointScreenshotAttachments
+        dateProvider = configuration.dateProvider
+        diagnosticsRedactor = NetworkRedactor(policy: support.networkRecorder?.capturePolicy ?? .metadataOnly)
         feedbackFormSupportOptions = FeedbackFormSupportOptions(
-            allowsTechnicalDetails: networkRecorder != nil,
-            allowsScreenshot: screenshotProvider != nil
+            allowsTechnicalDetails: support.networkRecorder != nil,
+            allowsScreenshot: support.screenshotProvider != nil
         )
     }
 

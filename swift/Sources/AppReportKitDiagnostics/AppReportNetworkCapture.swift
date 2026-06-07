@@ -148,6 +148,7 @@ private final class AppReportNetworkCaptureContext {
 }
 
 final class AppReportCaptureURLProtocol: URLProtocol {
+    private var shouldRecord = true
     private var startedAt: Date?
     private var accumulatedData = Data()
     private var response: HTTPURLResponse?
@@ -162,10 +163,6 @@ final class AppReportCaptureURLProtocol: URLProtocol {
             let scheme = request.url?.scheme?.lowercased(),
             scheme == "http" || scheme == "https"
         else {
-            return false
-        }
-
-        guard !AppReportCaptureControl.isExcludedFromDiagnosticsCapture(request) else {
             return false
         }
 
@@ -188,6 +185,8 @@ final class AppReportCaptureURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
+        shouldRecord = !AppReportCaptureControl.isExcludedFromDiagnosticsCapture(request)
+
         guard
             let captureID = AppReportNetworkCaptureInternals.captureID(from: request),
             let captureContext = AppReportNetworkCaptureContextRegistry.shared.context(for: captureID)
@@ -197,9 +196,15 @@ final class AppReportCaptureURLProtocol: URLProtocol {
         }
 
         startedAt = Date()
-        passthroughRequest = AppReportNetworkCaptureInternals
+        requestBody = Self.captureRequestBody(from: request)
+
+        var sanitizedRequest = AppReportNetworkCaptureInternals
             .strippingInternalCaptureState(from: request)
-        requestBody = request.httpBody ?? passthroughRequest?.httpBody
+        if let requestBody {
+            sanitizedRequest.httpBodyStream = nil
+            sanitizedRequest.httpBody = requestBody
+        }
+        passthroughRequest = sanitizedRequest
 
         let passthroughSession = URLSession(
             configuration: captureContext.makePassthroughConfiguration(),
@@ -219,12 +224,51 @@ final class AppReportCaptureURLProtocol: URLProtocol {
         dataTask = nil
         session = nil
     }
+
+    private static func captureRequestBody(from request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+
+        guard let bodyStream = request.httpBodyStream else {
+            return nil
+        }
+
+        return readBodyStream(bodyStream)
+    }
+
+    private static func readBodyStream(_ bodyStream: InputStream) -> Data? {
+        bodyStream.open()
+        defer {
+            bodyStream.close()
+        }
+
+        var body = Data()
+        let bufferSize = 4096
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer {
+            buffer.deallocate()
+        }
+
+        while bodyStream.hasBytesAvailable {
+            let bytesRead = bodyStream.read(buffer, maxLength: bufferSize)
+            guard bytesRead >= 0 else {
+                return nil
+            }
+            guard bytesRead > 0 else {
+                break
+            }
+            body.append(buffer, count: bytesRead)
+        }
+
+        return body.isEmpty ? nil : body
+    }
 }
 
 extension AppReportCaptureURLProtocol: URLSessionDataDelegate, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
-        dataTask: URLSessionDataTask,
+        dataTask _: URLSessionDataTask,
         didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
@@ -233,14 +277,14 @@ extension AppReportCaptureURLProtocol: URLSessionDataDelegate, URLSessionTaskDel
         completionHandler(.allow)
     }
 
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    func urlSession(_ session: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
         accumulatedData.append(data)
         client?.urlProtocol(self, didLoad: data)
     }
 
     func urlSession(
         _ session: URLSession,
-        task: URLSessionTask,
+        task _: URLSessionTask,
         didFinishCollecting metrics: URLSessionTaskMetrics
     ) {
         httpVersion = metrics.transactionMetrics.last.flatMap { metric in
@@ -250,7 +294,7 @@ extension AppReportCaptureURLProtocol: URLSessionDataDelegate, URLSessionTaskDel
 
     func urlSession(
         _ session: URLSession,
-        task: URLSessionTask,
+        task _: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
         if let error {
@@ -274,17 +318,25 @@ extension AppReportCaptureURLProtocol: URLSessionDataDelegate, URLSessionTaskDel
             return
         }
 
+        guard shouldRecord else {
+            return
+        }
+
         Task {
             await captureContext.recorder.record(
                 request: passthroughRequest,
-                requestBody: requestBody,
-                response: response,
-                responseBody: accumulatedData,
-                error: error,
                 startedAt: startedAt,
-                completedAt: Date(),
-                requestHTTPVersion: httpVersion,
-                responseHTTPVersion: httpVersion
+                context: .init(
+                    requestBody: requestBody,
+                    requestHTTPVersion: httpVersion
+                ),
+                outcome: .init(
+                    response: response,
+                    responseBody: accumulatedData,
+                    error: error,
+                    completedAt: Date(),
+                    responseHTTPVersion: httpVersion
+                )
             )
         }
     }

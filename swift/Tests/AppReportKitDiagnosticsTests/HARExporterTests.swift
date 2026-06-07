@@ -7,14 +7,18 @@ final class HARExporterTests: XCTestCase {
         let exporter = HARExporter(creatorVersion: "0.2.0-test")
         let event = NetworkEvent(
             id: "1",
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "GET",
-            scheme: "https",
-            host: "example.com",
-            path: "/orders",
-            queryItems: [NetworkNameValuePair(name: "token", value: "<redacted>")],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "GET",
+                scheme: "https",
+                host: "example.com",
+                path: "/orders",
+                queryItems: [NetworkNameValuePair(name: "token", value: "<redacted>")]
+            ),
             request: .init(
                 headers: [NetworkNameValuePair(name: "Authorization", value: "<redacted>")],
                 bodyPreview: nil,
@@ -26,9 +30,11 @@ final class HARExporterTests: XCTestCase {
                 statusCode: 200,
                 statusText: "ok",
                 headers: [NetworkNameValuePair(name: "Content-Type", value: "application/json")],
-                bodyPreview: #"{"ok":true}"#,
-                bodySize: 11,
-                mimeType: "application/json",
+                content: .init(
+                    bodyPreview: #"{"ok":true}"#,
+                    bodySize: 11,
+                    mimeType: "application/json"
+                ),
                 httpVersion: "",
                 redirectURL: nil
             ),
@@ -57,14 +63,18 @@ final class HARExporterTests: XCTestCase {
         let exporter = HARExporter()
         let event = NetworkEvent(
             id: "failed",
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "POST",
-            scheme: "https",
-            host: "example.com",
-            path: "/submit",
-            queryItems: [],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "POST",
+                scheme: "https",
+                host: "example.com",
+                path: "/submit",
+                queryItems: []
+            ),
             request: .init(
                 headers: [],
                 bodyPreview: nil,
@@ -92,14 +102,18 @@ final class HARExporterTests: XCTestCase {
         let exporter = HARExporter()
         let event = NetworkEvent(
             id: "1",
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "GET",
-            scheme: "https",
-            host: "example.com",
-            path: "/orders",
-            queryItems: [NetworkNameValuePair(name: "access_token", value: "<redacted>")],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "GET",
+                scheme: "https",
+                host: "example.com",
+                path: "/orders",
+                queryItems: [NetworkNameValuePair(name: "access_token", value: "<redacted>")]
+            ),
             request: .init(
                 headers: [NetworkNameValuePair(name: "Authorization", value: "<redacted>")],
                 bodyPreview: nil,
@@ -121,14 +135,18 @@ final class HARExporterTests: XCTestCase {
         let exporter = HARExporter()
         let knownVersionEvent = NetworkEvent(
             id: "known",
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "GET",
-            scheme: "https",
-            host: "example.com",
-            path: "/known",
-            queryItems: [],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "GET",
+                scheme: "https",
+                host: "example.com",
+                path: "/known",
+                queryItems: []
+            ),
             request: .init(
                 headers: [],
                 bodyPreview: nil,
@@ -140,9 +158,7 @@ final class HARExporterTests: XCTestCase {
                 statusCode: 200,
                 statusText: "ok",
                 headers: [],
-                bodyPreview: nil,
-                bodySize: nil,
-                mimeType: nil,
+                content: .init(),
                 httpVersion: "HTTP/2",
                 redirectURL: nil
             ),
@@ -151,14 +167,18 @@ final class HARExporterTests: XCTestCase {
         )
         let unknownVersionEvent = NetworkEvent(
             id: "unknown",
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "GET",
-            scheme: "https",
-            host: "example.com",
-            path: "/unknown",
-            queryItems: [],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "GET",
+                scheme: "https",
+                host: "example.com",
+                path: "/unknown",
+                queryItems: []
+            ),
             request: .init(
                 headers: [],
                 bodyPreview: nil,
@@ -170,9 +190,7 @@ final class HARExporterTests: XCTestCase {
                 statusCode: 200,
                 statusText: "ok",
                 headers: [],
-                bodyPreview: nil,
-                bodySize: nil,
-                mimeType: nil,
+                content: .init(),
                 httpVersion: nil,
                 redirectURL: nil
             ),

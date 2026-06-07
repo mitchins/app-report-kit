@@ -71,8 +71,10 @@ final class FeedbackFormViewModel: ObservableObject {
                 severity: severity,
                 email: email,
                 screen: screenContext,
-                includeTechnicalDetails: showsTechnicalDetailsToggle && includeTechnicalDetails,
-                includeScreenshot: showsScreenshotToggle && includeScreenshot
+                options: .init(
+                    includeTechnicalDetails: showsTechnicalDetailsToggle && includeTechnicalDetails,
+                    includeScreenshot: showsScreenshotToggle && includeScreenshot
+                )
             )
 
             let outcome = try await submitter.submit(request)

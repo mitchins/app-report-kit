@@ -57,8 +57,10 @@ let recorder = NetworkRecorder()
 let submitter = AppReportDiagnosticsSubmitter(
     reportBuilder: FeedbackReportBuilder(appId: "justcards"),
     delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
-    networkRecorder: recorder,
-    screenshotProvider: MyScreenshotProvider()
+    support: .init(
+        networkRecorder: recorder,
+        screenshotProvider: MyScreenshotProvider()
+    )
 )
 
 FeedbackForm(

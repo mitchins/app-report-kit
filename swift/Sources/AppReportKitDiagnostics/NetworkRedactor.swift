@@ -153,9 +153,12 @@ public struct NetworkRedactor: Sendable {
 
     private func replaceMatches(
         in string: String,
-        expression: NSRegularExpression,
+        expression: NSRegularExpression?,
         template: String
     ) -> String {
+        guard let expression else {
+            return string
+        }
         let range = NSRange(string.startIndex..<string.endIndex, in: string)
         return expression.stringByReplacingMatches(
             in: string,
@@ -205,19 +208,23 @@ public struct NetworkRedactor: Sendable {
         return true
     }
 
-    private static let bearerTokenExpression = try! NSRegularExpression(
+    private static let bearerTokenExpression = makeRegularExpression(
         pattern: #"(?i)Bearer\s+[A-Za-z0-9\-._~+/]+=*"#
     )
 
-    private static let authorizationExpression = try! NSRegularExpression(
+    private static let authorizationExpression = makeRegularExpression(
         pattern: #"(?i)(\"?authorization\"?\s*[:=]\s*)(Bearer\s+)?([^\r\n,}]+)"#
     )
 
-    private static let keyValueSecretExpression = try! NSRegularExpression(
+    private static let keyValueSecretExpression = makeRegularExpression(
         pattern: #"(?i)(\"?(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|secret|password|session)\"?\s*[:=]\s*[\"']?)[^\s\"'&,}]+"#
     )
 
-    private static let jwtExpression = try! NSRegularExpression(
+    private static let jwtExpression = makeRegularExpression(
         pattern: #"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\b"#
     )
+
+    private static func makeRegularExpression(pattern: String) -> NSRegularExpression? {
+        try? NSRegularExpression(pattern: pattern)
+    }
 }

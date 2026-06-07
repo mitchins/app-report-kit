@@ -129,14 +129,18 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             networkEvents: [
                 NetworkEvent(
                     id: "1",
-                    startedAt: Date(timeIntervalSince1970: 0),
-                    completedAt: Date(timeIntervalSince1970: 1),
-                    durationMs: 1000,
-                    method: "GET",
-                    scheme: "https",
-                    host: "example.com",
-                    path: "/secure",
-                    queryItems: [NetworkNameValuePair(name: "token", value: "<redacted>")],
+                    timing: .init(
+                        startedAt: Date(timeIntervalSince1970: 0),
+                        completedAt: Date(timeIntervalSince1970: 1),
+                        durationMs: 1000
+                    ),
+                    target: .init(
+                        method: "GET",
+                        scheme: "https",
+                        host: "example.com",
+                        path: "/secure",
+                        queryItems: [NetworkNameValuePair(name: "token", value: "<redacted>")]
+                    ),
                     request: .init(
                         headers: [NetworkNameValuePair(name: "Authorization", value: "<redacted>")],
                         bodyPreview: nil,
@@ -172,8 +176,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Export failed",
-                includeTechnicalDetails: true,
-                includeScreenshot: true
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
 
@@ -202,7 +205,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Export failed",
-                includeTechnicalDetails: true
+                options: .init(includeTechnicalDetails: true)
             )
         )
 
@@ -226,10 +229,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Export failed",
-                diagnostics: [
+                payload: .init(diagnostics: [
                     "accessToken": "top-secret",
                     "lastAction": "Tapped Export"
-                ]
+                ])
             )
         )
 
@@ -273,15 +276,23 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
                 .standard(recipient: "support@example.com", appName: "JustCards"),
                 fallbackPolicy: EmailFallbackPolicy(allowWhenNoEndpointConfigured: true, allowWhenEndpointFails: false)
             ),
-            networkRecorder: makeRecorder(),
-            screenshotProvider: StaticScreenshotProvider(),
-            mailAvailabilityChecker: StaticMailAvailabilityChecker(value: true),
-            platform: .iOS
+            support: .init(
+                networkRecorder: makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: true),
+                platform: .iOS
+            )
         )
 
         do {
             _ = try await submitter.submit(
-                FeedbackSubmissionRequest(kind: .bug, notes: "Still broken", includeTechnicalDetails: true)
+                FeedbackSubmissionRequest(
+                    kind: .bug,
+                    notes: "Still broken",
+                    options: .init(includeTechnicalDetails: true)
+                )
             )
             XCTFail("Expected endpoint failure")
         } catch let error as AppReportClientError {
@@ -298,14 +309,22 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
                 .standard(recipient: "support@example.com", appName: "JustCards"),
                 fallbackPolicy: EmailFallbackPolicy(allowWhenNoEndpointConfigured: true, allowWhenEndpointFails: true)
             ),
-            networkRecorder: makeRecorder(),
-            screenshotProvider: StaticScreenshotProvider(),
-            mailAvailabilityChecker: StaticMailAvailabilityChecker(value: false),
-            platform: .iOS
+            support: .init(
+                networkRecorder: makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: false),
+                platform: .iOS
+            )
         )
 
         let outcome = try await submitter.submit(
-            FeedbackSubmissionRequest(kind: .bug, notes: "Still broken", includeTechnicalDetails: true)
+            FeedbackSubmissionRequest(
+                kind: .bug,
+                notes: "Still broken",
+                options: .init(includeTechnicalDetails: true)
+            )
         )
 
         guard case .needsUserAction(.share) = outcome else {
@@ -325,17 +344,18 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         let submitter = AppReportDiagnosticsSubmitter(
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
-            networkRecorder: makeRecorder(),
-            screenshotProvider: StaticScreenshotProvider(),
-            attachBundleToEndpoint: false
+            support: .init(
+                networkRecorder: makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(attachBundleToEndpoint: false)
         )
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Broken export",
-                includeTechnicalDetails: true,
-                includeScreenshot: true
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
 
@@ -364,18 +384,21 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         let submitter = AppReportDiagnosticsSubmitter(
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
-            networkRecorder: makeRecorder(),
-            screenshotProvider: StaticScreenshotProvider(),
-            bundleBuilder: DiagnosticsBundleBuilder(temporaryDirectory: tempDirectory),
-            attachBundleToEndpoint: true
+            support: .init(
+                networkRecorder: makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                bundleBuilder: DiagnosticsBundleBuilder(temporaryDirectory: tempDirectory),
+                attachBundleToEndpoint: true
+            )
         )
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Broken export",
-                includeTechnicalDetails: true,
-                includeScreenshot: true
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
 
@@ -398,17 +421,18 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         let submitter = AppReportDiagnosticsSubmitter(
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
-            networkRecorder: makeRecorder(),
-            screenshotProvider: StaticScreenshotProvider(),
-            attachBundleToEndpoint: true
+            support: .init(
+                networkRecorder: makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(attachBundleToEndpoint: true)
         )
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Broken export",
-                includeTechnicalDetails: true,
-                includeScreenshot: true
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
 
@@ -432,7 +456,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Export failed",
-                includeTechnicalDetails: true
+                options: .init(includeTechnicalDetails: true)
             )
         )
 
@@ -463,8 +487,20 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         let contents = try String(contentsOf: packageURL)
 
         XCTAssertTrue(contents.contains(".target(name: \"AppReportKit\")"))
-        XCTAssertTrue(contents.contains(".target(\n            name: \"AppReportKitUI\",\n            dependencies: [\"AppReportKit\"]"))
-        XCTAssertTrue(contents.contains(".target(\n            name: \"AppReportKitDiagnostics\",\n            dependencies: [\"AppReportKit\"]"))
+        XCTAssertTrue(
+            containsTargetDeclaration(
+                named: "AppReportKitUI",
+                dependency: "AppReportKit",
+                in: contents
+            )
+        )
+        XCTAssertTrue(
+            containsTargetDeclaration(
+                named: "AppReportKitDiagnostics",
+                dependency: "AppReportKit",
+                in: contents
+            )
+        )
     }
 
     private func makeDiagnosticsSubmitter(
@@ -474,12 +510,16 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     ) -> AppReportDiagnosticsSubmitter {
         AppReportDiagnosticsSubmitter(
             reportBuilder: makeReportBuilder(),
-            diagnosticsProvider: FixedDiagnosticsProvider(),
             delivery: delivery,
-            networkRecorder: makeRecorder(),
-            screenshotProvider: StaticScreenshotProvider(),
-            mailAvailabilityChecker: StaticMailAvailabilityChecker(value: mailAvailability),
-            platform: platform
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: mailAvailability),
+                platform: platform
+            )
         )
     }
 
@@ -525,10 +565,12 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             )!
             await recorder.record(
                 request: request,
-                response: response,
-                responseBody: Data(#"{"ok":true}"#.utf8),
                 startedAt: Date(timeIntervalSince1970: 0),
-                completedAt: Date(timeIntervalSince1970: 1)
+                outcome: .init(
+                    response: response,
+                    responseBody: Data(#"{"ok":true}"#.utf8),
+                    completedAt: Date(timeIntervalSince1970: 1)
+                )
             )
             semaphore.signal()
         }
@@ -549,28 +591,44 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     private func makeNetworkEvent() -> NetworkEvent {
         NetworkEvent(
             id: "1",
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "GET",
-            scheme: "https",
-            host: "example.com",
-            path: "/orders",
-            queryItems: [],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "GET",
+                scheme: "https",
+                host: "example.com",
+                path: "/orders",
+                queryItems: []
+            ),
             request: .init(headers: [], bodyPreview: nil, bodySize: nil, mimeType: nil, httpVersion: "HTTP/1.1"),
             response: .init(
                 statusCode: 200,
                 statusText: "ok",
                 headers: [],
-                bodyPreview: nil,
-                bodySize: nil,
-                mimeType: "application/json",
+                content: .init(mimeType: "application/json"),
                 httpVersion: "",
                 redirectURL: nil
             ),
             failure: nil,
             taskMetadata: [:]
         )
+    }
+
+    private func containsTargetDeclaration(
+        named targetName: String,
+        dependency: String,
+        in contents: String
+    ) -> Bool {
+        let normalizedContents = contents.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        let declarationPrefix = #".target( name: "\#(targetName)", dependencies: ["\#(dependency)"]"#
+        return normalizedContents.contains(declarationPrefix)
     }
 }
 

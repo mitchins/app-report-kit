@@ -1,6 +1,32 @@
 import Foundation
 
 public struct FeedbackSubmissionRequest: Equatable, Sendable {
+    public struct Options: Equatable, Sendable {
+        public let includeTechnicalDetails: Bool
+        public let includeScreenshot: Bool
+
+        public init(
+            includeTechnicalDetails: Bool = false,
+            includeScreenshot: Bool = false
+        ) {
+            self.includeTechnicalDetails = includeTechnicalDetails
+            self.includeScreenshot = includeScreenshot
+        }
+    }
+
+    public struct Payload: Equatable, Sendable {
+        public let diagnostics: [String: String]
+        public let attachments: [FeedbackAttachment]
+
+        public init(
+            diagnostics: [String: String] = [:],
+            attachments: [FeedbackAttachment] = []
+        ) {
+            self.diagnostics = diagnostics
+            self.attachments = attachments
+        }
+    }
+
     public let kind: FeedbackReportKind
     public let notes: String
     public let severity: FeedbackSeverity
@@ -17,20 +43,18 @@ public struct FeedbackSubmissionRequest: Equatable, Sendable {
         severity: FeedbackSeverity = .normal,
         email: String? = nil,
         screen: String? = nil,
-        includeTechnicalDetails: Bool = false,
-        includeScreenshot: Bool = false,
-        diagnostics: [String: String] = [:],
-        attachments: [FeedbackAttachment] = []
+        options: Options = .init(),
+        payload: Payload = .init()
     ) {
         self.kind = kind
         self.notes = notes
         self.severity = severity
         self.email = email
         self.screen = screen
-        self.includeTechnicalDetails = includeTechnicalDetails
-        self.includeScreenshot = includeScreenshot
-        self.diagnostics = diagnostics
-        self.attachments = attachments
+        includeTechnicalDetails = options.includeTechnicalDetails
+        includeScreenshot = options.includeScreenshot
+        diagnostics = payload.diagnostics
+        attachments = payload.attachments
     }
 }
 

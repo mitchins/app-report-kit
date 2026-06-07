@@ -34,6 +34,22 @@ public struct NetworkEvent: Codable, Equatable, Sendable {
     }
 
     public struct ResponseDetails: Codable, Equatable, Sendable {
+        public struct ContentDetails: Codable, Equatable, Sendable {
+            public let bodyPreview: String?
+            public let bodySize: Int?
+            public let mimeType: String?
+
+            public init(
+                bodyPreview: String? = nil,
+                bodySize: Int? = nil,
+                mimeType: String? = nil
+            ) {
+                self.bodyPreview = bodyPreview
+                self.bodySize = bodySize
+                self.mimeType = mimeType
+            }
+        }
+
         public let statusCode: Int?
         public let statusText: String
         public let headers: [NetworkNameValuePair]
@@ -47,20 +63,56 @@ public struct NetworkEvent: Codable, Equatable, Sendable {
             statusCode: Int?,
             statusText: String,
             headers: [NetworkNameValuePair],
-            bodyPreview: String?,
-            bodySize: Int?,
-            mimeType: String?,
+            content: ContentDetails = .init(),
             httpVersion: String?,
             redirectURL: String?
         ) {
             self.statusCode = statusCode
             self.statusText = statusText
             self.headers = headers
-            self.bodyPreview = bodyPreview
-            self.bodySize = bodySize
-            self.mimeType = mimeType
+            bodyPreview = content.bodyPreview
+            bodySize = content.bodySize
+            mimeType = content.mimeType
             self.httpVersion = httpVersion
             self.redirectURL = redirectURL
+        }
+    }
+
+    public struct TimingDetails: Codable, Equatable, Sendable {
+        public let startedAt: Date
+        public let completedAt: Date?
+        public let durationMs: Double?
+
+        public init(
+            startedAt: Date,
+            completedAt: Date? = nil,
+            durationMs: Double? = nil
+        ) {
+            self.startedAt = startedAt
+            self.completedAt = completedAt
+            self.durationMs = durationMs
+        }
+    }
+
+    public struct TargetDetails: Codable, Equatable, Sendable {
+        public let method: String
+        public let scheme: String
+        public let host: String
+        public let path: String
+        public let queryItems: [NetworkNameValuePair]
+
+        public init(
+            method: String,
+            scheme: String,
+            host: String,
+            path: String,
+            queryItems: [NetworkNameValuePair]
+        ) {
+            self.method = method
+            self.scheme = scheme
+            self.host = host
+            self.path = path
+            self.queryItems = queryItems
         }
     }
 
@@ -92,28 +144,22 @@ public struct NetworkEvent: Codable, Equatable, Sendable {
 
     public init(
         id: String,
-        startedAt: Date,
-        completedAt: Date?,
-        durationMs: Double?,
-        method: String,
-        scheme: String,
-        host: String,
-        path: String,
-        queryItems: [NetworkNameValuePair],
+        timing: TimingDetails,
+        target: TargetDetails,
         request: RequestDetails,
         response: ResponseDetails?,
         failure: FailureDetails?,
         taskMetadata: [String: String]
     ) {
         self.id = id
-        self.startedAt = startedAt
-        self.completedAt = completedAt
-        self.durationMs = durationMs
-        self.method = method
-        self.scheme = scheme
-        self.host = host
-        self.path = path
-        self.queryItems = queryItems
+        startedAt = timing.startedAt
+        completedAt = timing.completedAt
+        durationMs = timing.durationMs
+        method = target.method
+        scheme = target.scheme
+        host = target.host
+        path = target.path
+        queryItems = target.queryItems
         self.request = request
         self.response = response
         self.failure = failure

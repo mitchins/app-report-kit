@@ -149,7 +149,7 @@ final class AppReportClientTests: XCTestCase {
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "No extra details",
-                includeTechnicalDetails: false
+                options: .init(includeTechnicalDetails: false)
             )
         )
 
@@ -169,7 +169,7 @@ final class AppReportClientTests: XCTestCase {
             FeedbackSubmissionRequest(
                 kind: .bug,
                 notes: "Need details",
-                includeTechnicalDetails: true
+                options: .init(includeTechnicalDetails: true)
             )
         )
 

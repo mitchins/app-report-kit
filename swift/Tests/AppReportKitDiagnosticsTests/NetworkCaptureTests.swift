@@ -38,10 +38,12 @@ final class NetworkCaptureTests: XCTestCase {
 
         await recorder.record(
             request: request,
-            response: response,
-            responseBody: Data(#"{"token":"response-secret","ok":true}"#.utf8),
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1)
+            outcome: .init(
+                response: response,
+                responseBody: Data(#"{"token":"response-secret","ok":true}"#.utf8),
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
         )
 
         let snapshot = await recorder.snapshot()
@@ -68,7 +70,7 @@ final class NetworkCaptureTests: XCTestCase {
         await recorder.record(
             request: request,
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1)
+            outcome: .init(completedAt: Date(timeIntervalSince1970: 1))
         )
 
         let snapshot = await recorder.snapshot()
@@ -94,11 +96,13 @@ final class NetworkCaptureTests: XCTestCase {
         await recorder.record(
             request: request,
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            taskMetadata: [
-                "authToken": "metadata-secret",
-                "lastAction": "Tapped Export"
-            ]
+            context: .init(
+                taskMetadata: [
+                    "authToken": "metadata-secret",
+                    "lastAction": "Tapped Export"
+                ]
+            ),
+            outcome: .init(completedAt: Date(timeIntervalSince1970: 1))
         )
 
         let snapshot = await recorder.snapshot()
@@ -139,11 +143,13 @@ final class NetworkCaptureTests: XCTestCase {
 
         await recorder.record(
             request: request,
-            response: response,
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            requestHTTPVersion: "HTTP/2",
-            responseHTTPVersion: "HTTP/2"
+            context: .init(requestHTTPVersion: "HTTP/2"),
+            outcome: .init(
+                response: response,
+                completedAt: Date(timeIntervalSince1970: 1),
+                responseHTTPVersion: "HTTP/2"
+            )
         )
 
         let snapshot = await recorder.snapshot()
@@ -194,9 +200,8 @@ final class NetworkCaptureTests: XCTestCase {
         XCTAssertEqual(event.method, "POST")
         XCTAssertEqual(event.queryItems.first?.value, "<redacted>")
         XCTAssertEqual(event.request.headers.first(where: { $0.name == "Authorization" })?.value, "<redacted>")
-        if let requestBodyPreview = event.request.bodyPreview {
-            XCTAssertTrue(requestBodyPreview.contains(#""clientSecret":"<redacted>""#))
-        }
+        let requestBodyPreview = try XCTUnwrap(event.request.bodyPreview)
+        XCTAssertTrue(requestBodyPreview.contains(#""clientSecret":"<redacted>""#))
         XCTAssertTrue(event.response?.bodyPreview?.contains(#""token":"<redacted>""#) == true)
         XCTAssertEqual(event.response?.headers.first(where: { $0.name == "Set-Cookie" })?.value, "<redacted>")
         XCTAssertEqual(StubNetworkURLProtocol.receivedRequests.first?.httpMethod, "POST")
@@ -253,6 +258,10 @@ final class NetworkCaptureTests: XCTestCase {
         let snapshot = await recorder.snapshot()
         XCTAssertTrue(snapshot.isEmpty)
         XCTAssertEqual(StubNetworkURLProtocol.receivedRequests.count, 1)
+        XCTAssertNil(
+            StubNetworkURLProtocol.receivedRequests.first?
+                .value(forHTTPHeaderField: AppReportNetworkCaptureInternals.captureHeaderName)
+        )
     }
 
     func testBinaryBodiesDoNotProducePreview() async throws {
@@ -275,10 +284,12 @@ final class NetworkCaptureTests: XCTestCase {
 
         await recorder.record(
             request: request,
-            response: response,
-            responseBody: Data([0x00, 0x01, 0x02]),
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1)
+            outcome: .init(
+                response: response,
+                responseBody: Data([0x00, 0x01, 0x02]),
+                completedAt: Date(timeIntervalSince1970: 1)
+            )
         )
 
         let snapshot = await recorder.snapshot()
@@ -290,7 +301,7 @@ final class NetworkCaptureTests: XCTestCase {
     func testBodyPreviewObeysByteLimit() async throws {
         let policy = NetworkCapturePolicy(
             capturesRequestBodyPreview: true,
-            maxBodyPreviewBytes: 8
+            limits: .init(maxBodyPreviewBytes: 8)
         )
         let recorder = NetworkRecorder(policy: policy)
         var request = URLRequest(url: URL(string: "https://example.com/export")!)
@@ -301,7 +312,7 @@ final class NetworkCaptureTests: XCTestCase {
         await recorder.record(
             request: request,
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1)
+            outcome: .init(completedAt: Date(timeIntervalSince1970: 1))
         )
 
         let snapshot = await recorder.snapshot()
@@ -320,7 +331,7 @@ final class NetworkCaptureTests: XCTestCase {
         await recorder.record(
             request: request,
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1)
+            outcome: .init(completedAt: Date(timeIntervalSince1970: 1))
         )
 
         let snapshot = await recorder.snapshot()
@@ -340,7 +351,7 @@ final class NetworkCaptureTests: XCTestCase {
         await recorder.record(
             request: request,
             startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1)
+            outcome: .init(completedAt: Date(timeIntervalSince1970: 1))
         )
 
         let snapshot = await recorder.snapshot()
@@ -369,14 +380,18 @@ final class NetworkCaptureTests: XCTestCase {
     private func makeEvent(id: String, bodyPreview: String) -> NetworkEvent {
         NetworkEvent(
             id: id,
-            startedAt: Date(timeIntervalSince1970: 0),
-            completedAt: Date(timeIntervalSince1970: 1),
-            durationMs: 1000,
-            method: "GET",
-            scheme: "https",
-            host: "example.com",
-            path: "/events",
-            queryItems: [],
+            timing: .init(
+                startedAt: Date(timeIntervalSince1970: 0),
+                completedAt: Date(timeIntervalSince1970: 1),
+                durationMs: 1000
+            ),
+            target: .init(
+                method: "GET",
+                scheme: "https",
+                host: "example.com",
+                path: "/events",
+                queryItems: []
+            ),
             request: .init(
                 headers: [],
                 bodyPreview: bodyPreview,
@@ -420,10 +435,14 @@ final class NetworkCaptureTests: XCTestCase {
 }
 
 private final class StubNetworkURLProtocol: URLProtocol {
-    static var handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
-
     private static let lock = NSLock()
+    private static var _handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
     private static var storedRequests: [URLRequest] = []
+
+    static var handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? {
+        get { lock.withLock { _handler } }
+        set { lock.withLock { _handler = newValue } }
+    }
 
     static var receivedRequests: [URLRequest] {
         lock.withLock { storedRequests }
@@ -431,7 +450,7 @@ private final class StubNetworkURLProtocol: URLProtocol {
 
     static func reset() {
         lock.withLock {
-            handler = nil
+            _handler = nil
             storedRequests = []
         }
     }
