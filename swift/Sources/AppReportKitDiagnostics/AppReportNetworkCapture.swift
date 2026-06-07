@@ -267,7 +267,7 @@ final class AppReportCaptureURLProtocol: URLProtocol {
 
 extension AppReportCaptureURLProtocol: URLSessionDataDelegate, URLSessionTaskDelegate {
     func urlSession(
-        _ session: URLSession,
+        _ _: URLSession,
         dataTask _: URLSessionDataTask,
         didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
@@ -277,13 +277,13 @@ extension AppReportCaptureURLProtocol: URLSessionDataDelegate, URLSessionTaskDel
         completionHandler(.allow)
     }
 
-    func urlSession(_ session: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
+    func urlSession(_ _: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
         accumulatedData.append(data)
         client?.urlProtocol(self, didLoad: data)
     }
 
     func urlSession(
-        _ session: URLSession,
+        _ _: URLSession,
         task _: URLSessionTask,
         didFinishCollecting metrics: URLSessionTaskMetrics
     ) {

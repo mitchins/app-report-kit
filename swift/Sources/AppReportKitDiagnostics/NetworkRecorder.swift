@@ -273,7 +273,7 @@ private final class TaskMetricsCollector: NSObject, URLSessionTaskDelegate, @unc
     }
 
     func urlSession(
-        _ session: URLSession,
+        _ _: URLSession,
         task _: URLSessionTask,
         didFinishCollecting metrics: URLSessionTaskMetrics
     ) {
