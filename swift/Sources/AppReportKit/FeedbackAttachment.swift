@@ -1,6 +1,6 @@
 import Foundation
 
-public struct FeedbackAttachment: Codable, Equatable {
+public struct FeedbackAttachment: Codable, Equatable, Sendable {
     public let filename: String
     public let contentType: String
     public let byteCount: Int
@@ -41,4 +41,3 @@ public struct FeedbackAttachment: Codable, Equatable {
         )
     }
 }
-

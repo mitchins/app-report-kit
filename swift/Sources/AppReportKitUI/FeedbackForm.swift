@@ -33,10 +33,42 @@ public struct FeedbackForm: View {
     ) {
         self.init(
             model: FeedbackFormViewModel(
-                client: client,
+                submitter: client,
                 initialKind: initialKind,
                 copy: copy,
-                screenContext: screenContext
+                screenContext: screenContext,
+                supportOptions: .disabled,
+                deliveryHandler: nil
+            ),
+            copy: copy,
+            style: style,
+            showsSeverityPicker: showsSeverityPicker,
+            screenContext: screenContext
+        )
+    }
+
+    public init(
+        submitter: any FeedbackSubmitting,
+        initialKind: FeedbackReportKind = .bug,
+        showsSeverityPicker: Bool = true,
+        screenContext: String? = nil,
+        copy: FeedbackFormCopy = .standard,
+        style: FeedbackFormStyle = .standard,
+        supportOptions: FeedbackFormSupportOptions? = nil,
+        deliveryHandler: FeedbackDeliveryHandler? = nil
+    ) {
+        let resolvedSupportOptions = supportOptions
+            ?? (submitter as? any FeedbackFormSupportProviding)?.feedbackFormSupportOptions
+            ?? .disabled
+
+        self.init(
+            model: FeedbackFormViewModel(
+                submitter: submitter,
+                initialKind: initialKind,
+                copy: copy,
+                screenContext: screenContext,
+                supportOptions: resolvedSupportOptions,
+                deliveryHandler: deliveryHandler
             ),
             copy: copy,
             style: style,
@@ -98,6 +130,16 @@ public struct FeedbackForm: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     #endif
+
+                if model.showsTechnicalDetailsToggle {
+                    Toggle(copy.includeTechnicalDetailsLabel, isOn: $model.includeTechnicalDetails)
+                        .accessibilityIdentifier("appreportkit.include-technical-details-toggle")
+                }
+
+                if model.showsScreenshotToggle {
+                    Toggle(copy.includeScreenshotLabel, isOn: $model.includeScreenshot)
+                        .accessibilityIdentifier("appreportkit.include-screenshot-toggle")
+                }
             }
 
             Section {

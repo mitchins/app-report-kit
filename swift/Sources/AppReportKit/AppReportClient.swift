@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public struct AppReportSubmissionResponse: Equatable {
+public struct AppReportSubmissionResponse: Equatable, Sendable {
     public let accepted: Bool
     public let statusCode: Int
 
@@ -19,12 +19,12 @@ public enum AppReportClientError: Error, Equatable {
     case serverRejected(statusCode: Int)
 }
 
-public final class AppReportClient {
+public final class AppReportClient: @unchecked Sendable {
     private let endpointURL: URL
     private let appId: String
     private let bearerToken: String
     private let diagnosticsProvider: FeedbackDiagnosticsProvider?
-    private let metadataProvider: FeedbackMetadataProviding
+    private let reportBuilder: FeedbackReportBuilder
     private let transport: AppReportTransport
 
     public init(
@@ -39,7 +39,7 @@ public final class AppReportClient {
         self.appId = appId
         self.bearerToken = bearerToken
         self.diagnosticsProvider = diagnosticsProvider
-        self.metadataProvider = metadataProvider
+        reportBuilder = FeedbackReportBuilder(appId: appId, metadataProvider: metadataProvider)
         self.transport = transport
     }
 
@@ -51,17 +51,14 @@ public final class AppReportClient {
         screen: String? = nil,
         attachments: [FeedbackAttachment] = []
     ) async throws -> AppReportSubmissionResponse {
-        let report = FeedbackReport(
-            appId: appId,
+        let report = reportBuilder.makeReport(
             kind: kind,
             notes: notes,
-            metadata: metadataProvider.makeMetadata(screen: screen),
-            submission: .init(
-                severity: severity,
-                email: email,
-                diagnostics: diagnosticsProvider?.makeDiagnostics() ?? [:],
-                attachments: attachments
-            )
+            severity: severity,
+            email: email,
+            screen: screen,
+            diagnostics: diagnosticsProvider?.makeDiagnostics() ?? [:],
+            attachments: attachments
         )
 
         return try await submit(report)
@@ -102,6 +99,30 @@ public final class AppReportClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         return request
+    }
+}
+
+extension AppReportClient: FeedbackSubmitting {
+    public func submit(_ request: FeedbackSubmissionRequest) async throws -> FeedbackSubmissionOutcome {
+        var diagnostics = request.diagnostics
+        if request.includeTechnicalDetails {
+            diagnostics.merge(diagnosticsProvider?.makeDiagnostics() ?? [:]) { _, newValue in
+                newValue
+            }
+        }
+
+        let report = reportBuilder.makeReport(
+            kind: request.kind,
+            notes: request.notes,
+            severity: request.severity,
+            email: request.email,
+            screen: request.screen,
+            diagnostics: diagnostics,
+            attachments: request.attachments
+        )
+
+        let response = try await submit(report)
+        return .submitted(response)
     }
 }
 

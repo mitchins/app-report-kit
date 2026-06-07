@@ -90,6 +90,64 @@ final class SupportTests: XCTestCase {
         }
     }
 
+    func testFeedbackReportBuilderUsesInjectedMetadataAndAppId() {
+        let builder = FeedbackReportBuilder(
+            appId: "justcards",
+            metadataProvider: FixedMetadataProvider(
+                metadata: FeedbackMetadata(
+                    app: .init(
+                        version: "1.2.3",
+                        build: "42",
+                        clientVersion: "0.2.0",
+                        screen: "Composer"
+                    ),
+                    device: .init(
+                        osName: "iOS",
+                        osVersion: "18.5",
+                        model: "iPhone16,2",
+                        locale: "en_AU"
+                    )
+                )
+            )
+        )
+
+        let report = builder.makeReport(
+            kind: .feedback,
+            notes: "Looks good",
+            diagnostics: ["context": "preview"]
+        )
+
+        XCTAssertEqual(report.appId, "justcards")
+        XCTAssertEqual(report.metadata.appVersion, "1.2.3")
+        XCTAssertEqual(report.diagnostics?["context"], "preview")
+    }
+
+    func testFeedbackFormSupportOptionsDefaultToDisabled() {
+        XCTAssertEqual(FeedbackFormSupportOptions.disabled, FeedbackFormSupportOptions())
+    }
+
+    func testSwiftSourcesDoNotContainGitHubEndpoints() throws {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourcesURL = rootURL.appendingPathComponent("Sources", isDirectory: true)
+        let enumerator = FileManager.default.enumerator(
+            at: sourcesURL,
+            includingPropertiesForKeys: nil
+        )
+
+        while let fileURL = enumerator?.nextObject() as? URL {
+            guard fileURL.pathExtension == "swift" else {
+                continue
+            }
+
+            let contents = try String(contentsOf: fileURL)
+            XCTAssertFalse(contents.contains("api.github.com"), "Unexpected GitHub endpoint in \(fileURL.lastPathComponent)")
+            XCTAssertFalse(contents.contains("github.com"), "Unexpected GitHub URL in \(fileURL.lastPathComponent)")
+        }
+    }
+
     private func makeSession(response: StubURLResponse, recordedRequest: URLRequest?) -> URLSession {
         StubURLProtocol.handler = { request in
             switch response {
@@ -109,6 +167,27 @@ final class SupportTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
         return URLSession(configuration: configuration)
+    }
+}
+
+private struct FixedMetadataProvider: FeedbackMetadataProviding {
+    let metadata: FeedbackMetadata
+
+    func makeMetadata(screen: String?) -> FeedbackMetadata {
+        FeedbackMetadata(
+            app: .init(
+                version: metadata.appVersion,
+                build: metadata.build,
+                clientVersion: metadata.clientVersion,
+                screen: screen ?? metadata.screen
+            ),
+            device: .init(
+                osName: metadata.osName,
+                osVersion: metadata.osVersion,
+                model: metadata.deviceModel,
+                locale: metadata.locale
+            )
+        )
     }
 }
 

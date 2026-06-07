@@ -32,6 +32,12 @@ Do not put any of these values in Swift code, examples, tests, fixtures, screens
 - AppReportKit does not collect personal data by default.
 - User email remains optional.
 - Diagnostics content is controlled by the host app.
+- `AppReportKitDiagnostics` records only app-owned traffic made through the `URLSessionConfiguration` the host app explicitly installs, or through manual wrapper calls the host opts into.
+- `AppReportKitDiagnostics` does not install root certificates, proxy traffic, alter TLS trust, or capture device-wide requests.
+- Redaction reduces what is retained and exported, but it is not a guarantee that every sensitive value is removed.
+- Text body previews scrub obvious token patterns, but higher-risk apps should leave previews off unless they accept the residual leak risk.
+- Email/share delivery is intentionally less controlled than the Worker path and should be used only when that is the desired support channel.
+- Encryption is future scope for higher-risk diagnostics workflows.
 - Host apps are responsible for privacy disclosures, consent, and regional compliance.
 
 ## Attachment model

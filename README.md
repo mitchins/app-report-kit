@@ -4,10 +4,10 @@ Lightweight in-app bug reports and feature requests, routed through Cloudflare W
 
 AppReportKit is a small intake pipe for solo developers shipping multiple Swift apps. Native apps submit bug reports, feature requests, and general feedback to a Cloudflare Worker. The Worker validates, rate-limits, deduplicates, and creates structured private GitHub issues with a server-side token.
 
-## What ships in v1
+## What ships
 
 1. `worker/` — a TypeScript Cloudflare Worker with `POST /v1/report`
-2. `swift/` — a Swift package with `AppReportKit` and `AppReportKitUI`
+2. `swift/` — a Swift package with `AppReportKit`, `AppReportKitUI`, and optional `AppReportKitDiagnostics`
 
 ## Non-goals
 
@@ -39,6 +39,7 @@ AppReportKit is a small intake pipe for solo developers shipping multiple Swift 
 
 - async/await client API
 - `AppReportKit` works without `AppReportKitUI`
+- `AppReportKitDiagnostics` is optional and does not sit underneath `AppReportKit`
 - injectable endpoint URL, app ID, bearer token, diagnostics provider, metadata provider, and transport
 - automatic metadata collection for version, build, platform, device model, locale, and package version
 - optional email field
@@ -46,6 +47,10 @@ AppReportKit is a small intake pipe for solo developers shipping multiple Swift 
 - reusable SwiftUI `FeedbackForm`
 - injectable `FeedbackFormCopy` for labels, placeholders, and success/error text
 - minimal styling hooks
+- optional diagnostics export for TestFlight/client debugging
+- app-only network recording through configuration-scoped `URLSession` capture
+- HAR export and diagnostics bundle export
+- email/share preparation when no endpoint is configured
 
 ## Repository layout
 
@@ -94,6 +99,17 @@ FeedbackForm(
     }
 )
 ```
+
+## Diagnostics add-on
+
+Use `AppReportKitDiagnostics` when a non-technical tester needs to send useful debugging context without proxy setup, root certificates, or device-wide capture.
+
+- capture is limited to app-owned requests made through `URLSession` instances built from a configuration you install
+- redaction happens before network events are retained in memory
+- diagnostics export produces a directory bundle with `report.json`, `metadata.json`, `network.har`, screenshots, and `README.txt`
+- email/share-only delivery works without a Worker endpoint
+
+See `docs/diagnostics.md` for the full TestFlight flow, privacy guidance, and instrumentation examples.
 
 ## Exact setup steps for Cloudflare Worker secrets
 
@@ -209,6 +225,7 @@ No app-side code, docs, fixtures, or examples should ever contain the GitHub tok
 - local/test config may use in-memory rate-limit and dedupe stores, but production config must use binding-backed rate limiting and KV-backed dedupe
 - attachments are accepted only as metadata or small inline payloads and are not stored by default
 - the bundled SwiftUI form does not capture screenshots automatically
+- diagnostics bundle upload to the Worker is off by default and existing Worker attachment limits still apply
 - TrustKit or other pinning is optional and app-owned
 
 ## Privacy notes
@@ -216,12 +233,16 @@ No app-side code, docs, fixtures, or examples should ever contain the GitHub tok
 - no personal data is collected by default
 - email is optional and only sent when the host app includes it
 - diagnostics are supplied by the host app and are not collected automatically beyond basic app/device metadata
+- diagnostics capture is app-only and explicitly instrumented
+- AppReportKitDiagnostics does not install certificates, proxy traffic, or capture device-wide requests
+- email/share delivery is less controlled than the Worker path and is intended for deliberate support/debugging workflows
 - host apps are responsible for their own privacy disclosures and consent flows
 - bearer keys are revocable routing and rate-limit keys, not strong secrets or proof of user identity
 
 ## Docs
 
 - `docs/deployment.md`
+- `docs/diagnostics.md`
 - `docs/security.md`
 - `docs/worker-config.example.json`
 - `examples/ios-swiftui-example/README.md`
