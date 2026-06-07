@@ -53,13 +53,52 @@ jobs:
       - run: swift --version
       - run: swift build
       - run: swift test --enable-code-coverage
-      - name: Run example UI tests on iPhone 17 Pro
+      - name: Select example UI test simulator
+        run: |
+          set -euo pipefail
+          AVAILABLE_DEVICES_JSON=$(xcrun simctl list devices available --json)
+          SIMULATOR_UDID=$(printf '%s' "$AVAILABLE_DEVICES_JSON" | jq -r '
+            [
+              .devices[] | .[]
+              | select(.isAvailable == true and (.name | test("^iPhone [0-9]+ Pro$")))
+              | {
+                  udid: .udid,
+                  name: .name,
+                  generation: (.name | capture("^iPhone (?<generation>[0-9]+) Pro$").generation | tonumber)
+                }
+            ]
+            | sort_by(.generation)
+            | last
+            | .udid // ""
+          ')
+          SIMULATOR_NAME=$(printf '%s' "$AVAILABLE_DEVICES_JSON" | jq -r --arg udid "$SIMULATOR_UDID" '
+            .devices[] | .[] | select(.udid == $udid) | .name
+          ' | head -1)
+
+          if [ -z "$SIMULATOR_UDID" ]; then
+            SIMULATOR_UDID=$(printf '%s' "$AVAILABLE_DEVICES_JSON" | jq -r '
+              .devices[] | .[] | select(.isAvailable == true and (.name | startswith("iPhone"))) | .udid
+            ' | head -1)
+            SIMULATOR_NAME=$(printf '%s' "$AVAILABLE_DEVICES_JSON" | jq -r --arg udid "$SIMULATOR_UDID" '
+              .devices[] | .[] | select(.udid == $udid) | .name
+            ' | head -1)
+          fi
+
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "No available iPhone simulator found"
+            exit 1
+          fi
+
+          echo "Using simulator: $SIMULATOR_NAME ($SIMULATOR_UDID)"
+          echo "IOS_SIMULATOR_NAME=$SIMULATOR_NAME" >> "$GITHUB_ENV"
+          echo "IOS_SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
+      - name: Run example UI tests on selected simulator
         working-directory: ${{ github.workspace }}/examples/ios-swiftui-example
         run: |
           xcodebuild test \
             -project AppReportKitExample.xcodeproj \
             -scheme AppReportKitExample \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -destination "id=${IOS_SIMULATOR_UDID}" \
             -derivedDataPath DerivedData \
             -resultBundlePath DerivedData/Logs/Test/AppReportKitExample.xcresult
       - name: Capture UI snapshot via simctl
@@ -76,10 +115,9 @@ jobs:
               -type d \
               -print -quit)
           fi
-          # Find the iPhone 17 Pro simulator UDID from JSON for stability.
-          UDID=$(xcrun simctl list devices --json | jq -r '.devices[] | .[] | select(.name == "iPhone 17 Pro") | .udid' | head -1)
+          UDID="${IOS_SIMULATOR_UDID:-}"
           if [ -z "$UDID" ]; then
-            echo "No iPhone 17 Pro simulator found; skipping simctl screenshot"
+            echo "No selected simulator available; skipping simctl screenshot"
             exit 0
           fi
           if [ -z "$APP_PATH" ]; then
@@ -96,7 +134,7 @@ jobs:
           xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
           xcrun simctl launch "$UDID" "$BUNDLE_ID" -appreportkit-ui-testing
           sleep 2
-          echo "Capturing screenshot from $UDID"
+          echo "Capturing screenshot from ${IOS_SIMULATOR_NAME:-simulator} ($UDID)"
           xcrun simctl io "$UDID" screenshot \
             "${{ github.workspace }}/examples/ios-swiftui-example/Screenshots/feedback-form-iPhone17Pro.png"
       - name: Upload UI snapshot artifact
