@@ -141,6 +141,46 @@ final class AppReportClientTests: XCTestCase {
         }
     }
 
+    func testSubmissionProtocolOmitsInjectedDiagnosticsWhenToggleIsOff() async throws {
+        let transport = MockTransport()
+        let client = makeClient(transport: transport)
+
+        let outcome = try await client.submit(
+            FeedbackSubmissionRequest(
+                kind: .bug,
+                notes: "No extra details",
+                options: .init(includeTechnicalDetails: false)
+            )
+        )
+
+        guard case .submitted = outcome else {
+            return XCTFail("Expected direct submission")
+        }
+
+        let payload = try XCTUnwrap(transport.lastDecodedPayload())
+        XCTAssertNil(payload.diagnostics)
+    }
+
+    func testSubmissionProtocolIncludesInjectedDiagnosticsWhenToggleIsOn() async throws {
+        let transport = MockTransport()
+        let client = makeClient(transport: transport)
+
+        let outcome = try await client.submit(
+            FeedbackSubmissionRequest(
+                kind: .bug,
+                notes: "Need details",
+                options: .init(includeTechnicalDetails: true)
+            )
+        )
+
+        guard case .submitted = outcome else {
+            return XCTFail("Expected direct submission")
+        }
+
+        let payload = try XCTUnwrap(transport.lastDecodedPayload())
+        XCTAssertEqual(payload.diagnostics?["lastAction"], "Tapped Export")
+    }
+
     private func makeClient(
         endpointURL: URL = reportEndpointURL,
         transport: MockTransport,

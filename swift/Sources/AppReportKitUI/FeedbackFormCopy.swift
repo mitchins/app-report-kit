@@ -8,6 +8,8 @@ public struct FeedbackFormCopy: Equatable, Sendable {
     public var notesLabel = "Notes / steps"
     public var notesPlaceholder = "Describe what happened, or what you want to change."
     public var emailPlaceholder = "Email (optional)"
+    public var includeTechnicalDetailsLabel = "Include technical details to help diagnose the problem"
+    public var includeScreenshotLabel = "Attach screenshot"
     public var submitButtonTitle = "Send report"
     public var successMessage = "Thanks — your report was queued."
     public var validationErrorMessage = "Please add notes or steps before sending."

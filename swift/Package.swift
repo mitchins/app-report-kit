@@ -9,12 +9,17 @@ let package = Package(
     ],
     products: [
         .library(name: "AppReportKit", targets: ["AppReportKit"]),
-        .library(name: "AppReportKitUI", targets: ["AppReportKitUI"])
+        .library(name: "AppReportKitUI", targets: ["AppReportKitUI"]),
+        .library(name: "AppReportKitDiagnostics", targets: ["AppReportKitDiagnostics"])
     ],
     targets: [
         .target(name: "AppReportKit"),
         .target(
             name: "AppReportKitUI",
+            dependencies: ["AppReportKit"]
+        ),
+        .target(
+            name: "AppReportKitDiagnostics",
             dependencies: ["AppReportKit"]
         ),
         .testTarget(
@@ -24,7 +29,10 @@ let package = Package(
         .testTarget(
             name: "AppReportKitUITests",
             dependencies: ["AppReportKitUI", "AppReportKit"]
+        ),
+        .testTarget(
+            name: "AppReportKitDiagnosticsTests",
+            dependencies: ["AppReportKitDiagnostics", "AppReportKit"]
         )
     ]
 )
-

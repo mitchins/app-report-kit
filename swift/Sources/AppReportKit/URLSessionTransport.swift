@@ -11,7 +11,7 @@ public struct URLSessionTransport: AppReportTransport {
     }
 
     public func send(request: URLRequest, body: Data) async throws -> AppReportTransportResponse {
-        var request = request
+        var request = AppReportCaptureControl.excludingDiagnosticsCapture(request)
         request.httpBody = body
 
         let (data, response) = try await session.data(for: request)
@@ -22,4 +22,3 @@ public struct URLSessionTransport: AppReportTransport {
         return AppReportTransportResponse(statusCode: httpResponse.statusCode, data: data)
     }
 }
-
