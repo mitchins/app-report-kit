@@ -1,77 +1,41 @@
 # AppReportKit
 
-Lightweight in-app bug reports and feature requests, routed through Cloudflare Workers to private GitHub issues.
+Small in-app bug reports and feature requests for Swift apps.
 
-AppReportKit is a small intake pipe for solo developers shipping multiple Swift apps. Native apps submit bug reports, feature requests, and general feedback to a Cloudflare Worker. The Worker validates, rate-limits, deduplicates, and creates structured private GitHub issues with a server-side token.
+It is not a hosted platform. It is a Cloudflare Worker plus a Swift package that sends reports to private GitHub issues.
 
-## What ships
+## What It Is
 
-1. `worker/` — a TypeScript Cloudflare Worker with `POST /v1/report`
-2. `swift/` — a Swift package with `AppReportKit`, `AppReportKitUI`, and optional `AppReportKitDiagnostics`
+- `worker/` receives reports at `POST /v1/report`
+- `swift/` contains:
+  - `AppReportKit`
+  - `AppReportKitUI`
+  - `AppReportKitDiagnostics`
 
-## Non-goals
+The normal flow is:
 
-- dashboard
-- accounts or login
-- analytics
-- crash reporting
-- app-side GitHub access
-- mandatory screenshot storage
-- mandatory certificate pinning
-- AI triage by default
-- heavy theming or design system work
+1. Your app submits a report.
+2. The Worker validates it, rate-limits it, and deduplicates obvious repeats.
+3. The Worker creates a private GitHub issue with a server-side token.
 
-## Worker features
+## What It Is Not
 
-- per-app bearer key auth
-- bearer key config references Worker secret binding names only
-- schema validation
-- required notes field
-- payload and attachment size limits
-- rate limiting by app key identity and hashed client IP
-- deterministic dedupe fingerprint
-- obvious secret redaction
-- GitHub issue creation with server-side token only
-- generic client-safe responses
-- multiple app configs
+- no dashboard
+- no accounts
+- no analytics
+- no crash reporting
+- no app-side GitHub token
+- no SaaS control plane
 
-## Swift package features
+## Swift Package
 
-- async/await client API
-- `AppReportKit` works without `AppReportKitUI`
-- `AppReportKitDiagnostics` is optional and does not sit underneath `AppReportKit`
-- injectable endpoint URL, app ID, bearer token, diagnostics provider, metadata provider, and transport
-- automatic metadata collection for version, build, platform, device model, locale, and package version
-- optional email field
-- optional attachment payload support
-- reusable SwiftUI `FeedbackForm`
-- injectable `FeedbackFormCopy` for labels, placeholders, and success/error text
-- minimal styling hooks
-- optional diagnostics export for TestFlight/client debugging
-- app-only network recording through configuration-scoped `URLSession` capture
-- HAR export and diagnostics bundle export
-- email/share preparation when no endpoint is configured
+`AppReportKit` is the core client.
 
-## Repository layout
+`AppReportKitUI` adds a reusable SwiftUI feedback form.
 
-```text
-app-report-kit/
-  README.md
-  LICENSE
-  PLAN.md
-  worker/
-  swift/
-  examples/
-  docs/
-  .github/workflows/
-```
+`AppReportKitDiagnostics` is optional. It is for TestFlight or client debugging when you want to attach app-scoped technical detail without proxy setup, MITM tooling, or device-wide capture.
 
-## Exact setup steps for a new app
-
-1. Add the Swift package from this repository to your app target.
-2. Create a per-app or per-environment bearer key for the Worker, for example `JUSTCARDS_PROD_REPORT_KEY`.
-3. Initialize `AppReportClient` with your Worker endpoint, app ID, and bearer key.
-4. Present `FeedbackForm(client:)` or call `client.submit(...)` directly.
+## Quick Start
 
 ```swift
 import AppReportKit
@@ -80,40 +44,40 @@ import AppReportKitUI
 let client = AppReportClient(
     endpointURL: URL(string: "https://reports.example.com/v1/report")!,
     appId: "justcards",
-    bearerToken: "APP_REPORT_KEY_PLACEHOLDER",
-    diagnosticsProvider: MyDiagnosticsProvider()
+    bearerToken: "APP_REPORT_KEY_PLACEHOLDER"
 )
 
 FeedbackForm(client: client, screenContext: "InvoiceEditor")
 ```
 
-If you need light copy changes without rebuilding the form, inject `FeedbackFormCopy`:
+If you do not want the built-in form, call `client.submit(...)` directly.
 
-```swift
-FeedbackForm(
-    client: client,
-    screenContext: "InvoiceEditor",
-    copy: FeedbackFormCopy {
-        $0.notesLabel = "What happened?"
-        $0.notesPlaceholder = "Share the steps, expected result, and actual result."
-    }
-)
-```
+## Diagnostics
 
-## Diagnostics add-on
+Use `AppReportKitDiagnostics` when a tester needs to send a useful bug report with notes, metadata, screenshots, and recent app-only network activity.
 
-Use `AppReportKitDiagnostics` when a non-technical tester needs to send useful debugging context without proxy setup, root certificates, or device-wide capture.
+Important boundaries:
 
-- capture is limited to app-owned requests made through `URLSession` instances built from a configuration you install
-- redaction happens before network events are retained in memory
-- diagnostics export produces a directory bundle with `report.json`, `metadata.json`, `network.har`, screenshots, and `README.txt`
-- email/share-only delivery works without a Worker endpoint
+- capture is app-only
+- no global interception
+- no proxying
+- no root certificates
+- no TLS trust changes
+- no device-wide traffic capture
 
-See `docs/diagnostics.md` for the full TestFlight flow, privacy guidance, and instrumentation examples.
+That module can also prepare email/share delivery when no Worker endpoint is configured.
 
-## Exact setup steps for Cloudflare Worker secrets
+See [docs/diagnostics.md](docs/diagnostics.md).
 
-`APP_CONFIG_JSON` is a normal Worker variable. The GitHub token and per-app report keys come only from Worker secrets. Production rate limiting and dedupe also require durable bindings referenced by name from `APP_CONFIG_JSON`.
+## Worker Setup
+
+The Worker expects:
+
+- `APP_CONFIG_JSON` as a normal Worker variable
+- `GITHUB_TOKEN` as a Worker secret
+- one Worker secret per app/environment report key
+
+Typical deploy flow:
 
 ```bash
 cd worker
@@ -123,128 +87,20 @@ npx wrangler secret put JUSTCARDS_PROD_REPORT_KEY
 npx wrangler deploy
 ```
 
-Set `APP_CONFIG_JSON` to JSON matching `docs/worker-config.example.json`, then bind the named production rate-limit and KV dedupe resources in `wrangler.jsonc` or your deployment environment.
+The Worker config shape lives in [docs/worker-config.example.json](docs/worker-config.example.json).
 
-## Scaling multiple apps
+## Boundaries
 
-One Worker deployment can route reports for many apps.
-
-- use one `appId` per app and environment
-- use one bearer secret per app and environment
-- map `appId -> bearerKeyBinding -> GitHub owner/repo/defaultLabels/policies` in `APP_CONFIG_JSON`
-- keep debug and production entries separate so keys and rate limits can be revoked independently
-
-Example: multiple apps into one private triage repo:
-
-```json
-{
-  "runtimeMode": "production",
-  "apps": [
-    {
-      "appId": "justcards-ios-prod",
-      "bearerKeyBinding": "JUSTCARDS_IOS_PROD_REPORT_KEY",
-      "github": { "owner": "your-org", "repo": "private-triage" },
-      "defaultLabels": ["app:justcards", "platform:ios"],
-      "allowedKinds": ["bug", "feature", "feedback"],
-      "maxPayloadSizeBytes": 32768,
-      "rateLimit": { "mode": "binding", "windowSeconds": 3600, "maxRequests": 6, "bindingName": "REPORT_RATE_LIMITER" },
-      "attachmentPolicy": { "maxAttachmentBytes": 262144, "maxAttachmentCount": 2, "allowInlineData": true, "allowRemoteUrls": true },
-      "dedupe": { "mode": "kv", "windowSeconds": 86400, "bindingName": "REPORT_DEDUPE_KV" }
-    },
-    {
-      "appId": "recipebox-macos-prod",
-      "bearerKeyBinding": "RECIPEBOX_MACOS_PROD_REPORT_KEY",
-      "github": { "owner": "your-org", "repo": "private-triage" },
-      "defaultLabels": ["app:recipebox", "platform:macos"],
-      "allowedKinds": ["bug", "feature", "feedback"],
-      "maxPayloadSizeBytes": 32768,
-      "rateLimit": { "mode": "binding", "windowSeconds": 3600, "maxRequests": 6, "bindingName": "REPORT_RATE_LIMITER" },
-      "attachmentPolicy": { "maxAttachmentBytes": 262144, "maxAttachmentCount": 2, "allowInlineData": true, "allowRemoteUrls": true },
-      "dedupe": { "mode": "kv", "windowSeconds": 86400, "bindingName": "REPORT_DEDUPE_KV" }
-    }
-  ]
-}
-```
-
-Example: multiple apps into separate private repos:
-
-```json
-{
-  "runtimeMode": "production",
-  "apps": [
-    {
-      "appId": "justcards-prod",
-      "bearerKeyBinding": "JUSTCARDS_PROD_REPORT_KEY",
-      "github": { "owner": "your-org", "repo": "justcards-intake" },
-      "defaultLabels": ["app:justcards"],
-      "allowedKinds": ["bug", "feature", "feedback"],
-      "maxPayloadSizeBytes": 32768,
-      "rateLimit": { "mode": "binding", "windowSeconds": 3600, "maxRequests": 6, "bindingName": "REPORT_RATE_LIMITER" },
-      "attachmentPolicy": { "maxAttachmentBytes": 262144, "maxAttachmentCount": 2, "allowInlineData": true, "allowRemoteUrls": true },
-      "dedupe": { "mode": "kv", "windowSeconds": 86400, "bindingName": "REPORT_DEDUPE_KV" }
-    },
-    {
-      "appId": "recipebox-prod",
-      "bearerKeyBinding": "RECIPEBOX_PROD_REPORT_KEY",
-      "github": { "owner": "your-org", "repo": "recipebox-intake" },
-      "defaultLabels": ["app:recipebox"],
-      "allowedKinds": ["bug", "feature", "feedback"],
-      "maxPayloadSizeBytes": 32768,
-      "rateLimit": { "mode": "binding", "windowSeconds": 3600, "maxRequests": 6, "bindingName": "REPORT_RATE_LIMITER" },
-      "attachmentPolicy": { "maxAttachmentBytes": 262144, "maxAttachmentCount": 2, "allowInlineData": true, "allowRemoteUrls": true },
-      "dedupe": { "mode": "kv", "windowSeconds": 86400, "bindingName": "REPORT_DEDUPE_KV" }
-    }
-  ]
-}
-```
-
-## Deploy your own fork
-
-1. Create a private GitHub repository that will receive the Worker-created issues.
-2. Create a fine-grained GitHub token scoped to that repo with **Metadata: read-only** and **Issues: read and write**.
-3. Create a Cloudflare Worker for your fork.
-4. Configure a KV namespace for `REPORT_DEDUPE_KV` and a rate-limit binding for `REPORT_RATE_LIMITER`.
-5. Set Worker secrets for `GITHUB_TOKEN` and one per-app report key secret such as `JUSTCARDS_PROD_REPORT_KEY`.
-6. Edit `APP_CONFIG_JSON` so each app entry points at the correct `appId`, bearer key binding name, GitHub owner/repo, labels, and policies.
-7. Deploy the Worker.
-8. Configure the Swift client with your Worker URL, `appId`, and the matching per-app report key.
-
-## Exact GitHub token permissions needed
-
-Use a fine-grained personal access token or GitHub App token scoped to the private intake repository only.
-
-| Permission | Access |
-| --- | --- |
-| Metadata | Read-only |
-| Issues | Read and write |
-
-No app-side code, docs, fixtures, or examples should ever contain the GitHub token.
-
-## v1 limitations
-
-- local/test config may use in-memory rate-limit and dedupe stores, but production config must use binding-backed rate limiting and KV-backed dedupe
-- attachments are accepted only as metadata or small inline payloads and are not stored by default
-- the bundled SwiftUI form does not capture screenshots automatically
-- diagnostics bundle upload to the Worker is off by default and existing Worker attachment limits still apply
-- TrustKit or other pinning is optional and app-owned
-
-## Privacy notes
-
-- no personal data is collected by default
-- email is optional and only sent when the host app includes it
-- diagnostics are supplied by the host app and are not collected automatically beyond basic app/device metadata
-- diagnostics capture is app-only and explicitly instrumented
-- AppReportKitDiagnostics does not install certificates, proxy traffic, or capture device-wide requests
-- email/share delivery is less controlled than the Worker path and is intended for deliberate support/debugging workflows
-- host apps are responsible for their own privacy disclosures and consent flows
-- bearer keys are revocable routing and rate-limit keys, not strong secrets or proof of user identity
+- attachments are small and optional
+- diagnostics bundle upload to the Worker is off by default
+- screenshots are host-supplied only
+- host apps own privacy disclosure and consent
+- bearer keys are routing keys, not user identity
 
 ## Docs
 
-- `docs/deployment.md`
-- `docs/diagnostics.md`
-- `docs/security.md`
-- `docs/worker-config.example.json`
-- `examples/ios-swiftui-example/README.md`
-
-The example README includes the iPhone 17 Pro UI test snapshot artifact for the reusable form flow.
+- [docs/deployment.md](docs/deployment.md)
+- [docs/diagnostics.md](docs/diagnostics.md)
+- [docs/security.md](docs/security.md)
+- [docs/worker-config.example.json](docs/worker-config.example.json)
+- [examples/ios-swiftui-example/README.md](examples/ios-swiftui-example/README.md)
