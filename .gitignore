@@ -9,4 +9,4 @@ worker/dist
 worker/node_modules
 swift/.build
 swift/.swiftpm
-
+.build

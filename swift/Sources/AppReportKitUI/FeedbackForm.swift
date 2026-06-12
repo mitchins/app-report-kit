@@ -1,36 +1,41 @@
 import AppReportKit
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 public struct FeedbackForm: View {
     @StateObject private var model: FeedbackFormViewModel
 
     private let copy: FeedbackFormCopy
     private let style: FeedbackFormStyle
-    private let showsSeverityPicker: Bool
     private let screenContext: String?
 
     init(
         model: FeedbackFormViewModel,
         copy: FeedbackFormCopy = .standard,
         style: FeedbackFormStyle = .standard,
-        showsSeverityPicker: Bool = true,
         screenContext: String? = nil
     ) {
         _model = StateObject(wrappedValue: model)
         self.copy = copy
         self.style = style
-        self.showsSeverityPicker = showsSeverityPicker
         self.screenContext = screenContext
     }
 
     public init(
         client: AppReportClient,
         initialKind: FeedbackReportKind = .bug,
-        showsSeverityPicker: Bool = true,
+        showsSeverityPicker: Bool? = nil,
         screenContext: String? = nil,
         copy: FeedbackFormCopy = .standard,
-        style: FeedbackFormStyle = .standard
+        style: FeedbackFormStyle = .standard,
+        policy: FeedbackFormPolicy? = nil
     ) {
+        let resolvedPolicy = policy ?? .standard
+        let policyWithSeverity = resolvedPolicy.with(showsSeverityPicker: showsSeverityPicker)
         self.init(
             model: FeedbackFormViewModel(
                 submitter: client,
@@ -38,11 +43,11 @@ public struct FeedbackForm: View {
                 copy: copy,
                 screenContext: screenContext,
                 supportOptions: .disabled,
+                policy: policyWithSeverity,
                 deliveryHandler: nil
             ),
             copy: copy,
             style: style,
-            showsSeverityPicker: showsSeverityPicker,
             screenContext: screenContext
         )
     }
@@ -50,16 +55,21 @@ public struct FeedbackForm: View {
     public init(
         submitter: any FeedbackSubmitting,
         initialKind: FeedbackReportKind = .bug,
-        showsSeverityPicker: Bool = true,
+        showsSeverityPicker: Bool? = nil,
         screenContext: String? = nil,
         copy: FeedbackFormCopy = .standard,
         style: FeedbackFormStyle = .standard,
         supportOptions: FeedbackFormSupportOptions? = nil,
-        deliveryHandler: FeedbackDeliveryHandler? = nil
+        deliveryHandler: FeedbackDeliveryHandler? = nil,
+        policy: FeedbackFormPolicy? = nil
     ) {
         let resolvedSupportOptions = supportOptions
             ?? (submitter as? any FeedbackFormSupportProviding)?.feedbackFormSupportOptions
             ?? .disabled
+        let resolvedPolicy = policy
+            ?? (submitter as? any FeedbackFormPolicyProviding)?.feedbackFormPolicy
+            ?? .standard
+        let policyWithSeverity = resolvedPolicy.with(showsSeverityPicker: showsSeverityPicker)
 
         self.init(
             model: FeedbackFormViewModel(
@@ -68,11 +78,11 @@ public struct FeedbackForm: View {
                 copy: copy,
                 screenContext: screenContext,
                 supportOptions: resolvedSupportOptions,
+                policy: policyWithSeverity,
                 deliveryHandler: deliveryHandler
             ),
             copy: copy,
             style: style,
-            showsSeverityPicker: showsSeverityPicker,
             screenContext: screenContext
         )
     }
@@ -80,14 +90,16 @@ public struct FeedbackForm: View {
     public var body: some View {
         Form {
             Section(copy.reportSectionTitle) {
-                Picker(copy.kindLabel, selection: $model.kind) {
-                    ForEach(FeedbackReportKind.allCases, id: \.self) { kind in
-                        Text(kind.rawValue.capitalized).tag(kind)
+                if model.showsKindPicker {
+                    Picker(copy.kindLabel, selection: $model.kind) {
+                        ForEach(model.kindOptions, id: \.self) { kind in
+                            Text(kind.rawValue.capitalized).tag(kind)
+                        }
                     }
+                    .accessibilityIdentifier("appreportkit.kind-picker")
                 }
-                .accessibilityIdentifier("appreportkit.kind-picker")
 
-                if showsSeverityPicker {
+                if model.showsSeverityPicker {
                     Picker(copy.severityLabel, selection: $model.severity) {
                         ForEach(FeedbackSeverity.allCases, id: \.self) { severity in
                             Text(severity.rawValue.capitalized).tag(severity)
@@ -123,13 +135,15 @@ public struct FeedbackForm: View {
                     }
                 }
 
-                TextField(copy.emailPlaceholder, text: $model.email)
-                    .accessibilityIdentifier("appreportkit.email-field")
-                    #if os(iOS)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    #endif
+                if model.showsEmailField {
+                    TextField(copy.emailPlaceholder, text: $model.email)
+                        .accessibilityIdentifier("appreportkit.email-field")
+                        #if os(iOS)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                }
 
                 if model.showsTechnicalDetailsToggle {
                     Toggle(copy.includeTechnicalDetailsLabel, isOn: $model.includeTechnicalDetails)
@@ -139,6 +153,43 @@ public struct FeedbackForm: View {
                 if model.showsScreenshotToggle {
                     Toggle(copy.includeScreenshotLabel, isOn: $model.includeScreenshot)
                         .accessibilityIdentifier("appreportkit.include-screenshot-toggle")
+
+                    if model.includeScreenshot, !model.screenshotPreviews.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(model.screenshotPreviews) { screenshot in
+                                HStack(alignment: .top, spacing: 10) {
+                                    if let screenshotImage = makeFeedbackFormImage(from: screenshot.data) {
+                                        screenshotImage
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 120, height: 80)
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                            .clipped()
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(screenshot.filename)
+                                            .font(.caption)
+                                            .lineLimit(1)
+
+                                        Text(screenshot.contentType)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+
+                                        Button("Remove") {
+                                            model.removeScreenshot(screenshot.id)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .accessibilityIdentifier("appreportkit.remove-screenshot-button")
+                                    }
+
+                                    Spacer()
+                                }
+                                Divider()
+                            }
+                        }
+                        .accessibilityIdentifier("appreportkit.screenshot-preview")
+                    }
                 }
             }
 
@@ -152,7 +203,7 @@ public struct FeedbackForm: View {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                     } else {
-                        Text(copy.submitButtonTitle)
+                        Text(model.submitButtonTitle)
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -179,7 +230,7 @@ public struct FeedbackForm: View {
     }
 }
 
-private extension View {
+    private extension View {
     @ViewBuilder
     func appReportForeground(_ color: Color?) -> some View {
         if let color {
@@ -215,4 +266,15 @@ private extension View {
             self
         }
     }
+
+}
+
+private func makeFeedbackFormImage(from data: Data) -> Image? {
+    #if os(iOS)
+    UIImage(data: data).map { Image(uiImage: $0) }
+    #elseif os(macOS)
+    NSImage(data: data).map { Image(nsImage: $0) }
+    #else
+    nil
+    #endif
 }

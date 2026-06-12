@@ -40,4 +40,12 @@ public struct FeedbackAttachment: Codable, Equatable, Sendable {
             sha256: sha256
         )
     }
+
+    public var data: Data? {
+        guard let dataBase64 else {
+            return nil
+        }
+
+        return Data(base64Encoded: dataBase64)
+    }
 }

@@ -6,17 +6,20 @@ public struct FeedbackReport: Codable, Equatable {
         public let email: String?
         public let diagnostics: [String: String]
         public let attachments: [FeedbackAttachment]
+        public let breadcrumbs: [FeedbackBreadcrumb]
 
         public init(
             severity: FeedbackSeverity = .normal,
             email: String? = nil,
             diagnostics: [String: String] = [:],
-            attachments: [FeedbackAttachment] = []
+            attachments: [FeedbackAttachment] = [],
+            breadcrumbs: [FeedbackBreadcrumb] = []
         ) {
             self.severity = severity
             self.email = email
             self.diagnostics = diagnostics
             self.attachments = attachments
+            self.breadcrumbs = breadcrumbs
         }
     }
 
@@ -28,6 +31,7 @@ public struct FeedbackReport: Codable, Equatable {
     public let metadata: FeedbackMetadata
     public let diagnostics: [String: String]?
     public let attachments: [FeedbackAttachment]
+    public let breadcrumbs: [FeedbackBreadcrumb]
 
     public init(
         appId: String,
@@ -44,6 +48,7 @@ public struct FeedbackReport: Codable, Equatable {
         self.metadata = metadata
         diagnostics = submission.diagnostics.isEmpty ? nil : submission.diagnostics
         attachments = submission.attachments
+        breadcrumbs = submission.breadcrumbs
     }
 }
 

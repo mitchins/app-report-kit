@@ -1,5 +1,13 @@
 import Foundation
 
+public enum FeedbackSubmissionRoute: String, Codable, Sendable {
+    case endpoint
+    case email
+    case share
+    case export
+    case unavailable
+}
+
 public struct FeedbackSubmissionRequest: Equatable, Sendable {
     public struct Options: Equatable, Sendable {
         public let includeTechnicalDetails: Bool
@@ -36,6 +44,7 @@ public struct FeedbackSubmissionRequest: Equatable, Sendable {
     public let includeScreenshot: Bool
     public let diagnostics: [String: String]
     public let attachments: [FeedbackAttachment]
+    public let screenshotAttachments: [FeedbackAttachment]
 
     public init(
         kind: FeedbackReportKind,
@@ -44,7 +53,8 @@ public struct FeedbackSubmissionRequest: Equatable, Sendable {
         email: String? = nil,
         screen: String? = nil,
         options: Options = .init(),
-        payload: Payload = .init()
+        payload: Payload = .init(),
+        screenshotAttachments: [FeedbackAttachment] = []
     ) {
         self.kind = kind
         self.notes = notes
@@ -55,6 +65,7 @@ public struct FeedbackSubmissionRequest: Equatable, Sendable {
         includeScreenshot = options.includeScreenshot
         diagnostics = payload.diagnostics
         attachments = payload.attachments
+        self.screenshotAttachments = screenshotAttachments
     }
 }
 
@@ -65,6 +76,22 @@ public struct FeedbackPreparedAttachment: Equatable, Sendable {
     public init(fileURL: URL, contentType: String) {
         self.fileURL = fileURL
         self.contentType = contentType
+    }
+}
+
+public struct FeedbackBreadcrumb: Codable, Equatable, Sendable {
+    public let timestamp: Date
+    public let title: String
+    public let metadata: [String: String]
+
+    public init(
+        timestamp: Date = Date(),
+        title: String,
+        metadata: [String: String] = [:]
+    ) {
+        self.timestamp = timestamp
+        self.title = title
+        self.metadata = metadata
     }
 }
 
@@ -140,6 +167,126 @@ public struct FeedbackFormSupportOptions: Equatable, Sendable {
     public static let disabled = FeedbackFormSupportOptions()
 }
 
+public struct FeedbackFormPolicy: Equatable, Sendable {
+    public let allowedKinds: [FeedbackReportKind]
+    public let defaultKind: FeedbackReportKind
+    public let showsKindPicker: Bool
+    public let showsSeverityPicker: Bool
+    public let defaultSeverity: FeedbackSeverity
+    public let allowsEmail: Bool
+    public let requiresEmail: Bool
+    public let allowsTechnicalDetails: Bool
+    public let technicalDetailsDefaultOn: Bool
+    public let allowsScreenshot: Bool
+    public let screenshotDefaultOn: Bool
+    public let requiresNotes: Bool
+
+    public init(
+        allowedKinds: [FeedbackReportKind] = FeedbackReportKind.allCases,
+        defaultKind: FeedbackReportKind = .bug,
+        showsKindPicker: Bool = true,
+        showsSeverityPicker: Bool = true,
+        defaultSeverity: FeedbackSeverity = .normal,
+        allowsEmail: Bool = true,
+        requiresEmail: Bool = false,
+        allowsTechnicalDetails: Bool = false,
+        technicalDetailsDefaultOn: Bool = false,
+        allowsScreenshot: Bool = false,
+        screenshotDefaultOn: Bool = false,
+        requiresNotes: Bool = true
+    ) {
+        var distinctKinds: [FeedbackReportKind] = []
+        for kind in allowedKinds.isEmpty ? FeedbackReportKind.allCases : allowedKinds {
+            if !distinctKinds.contains(kind) {
+                distinctKinds.append(kind)
+            }
+        }
+
+        let safeRequiresEmail = requiresEmail && allowsEmail
+        let normalizedDefaultKind = distinctKinds.contains(defaultKind) ? defaultKind : distinctKinds[0]
+
+        self.allowedKinds = distinctKinds
+        self.defaultKind = normalizedDefaultKind
+        self.showsKindPicker = showsKindPicker
+        self.showsSeverityPicker = showsSeverityPicker
+        self.defaultSeverity = defaultSeverity
+        self.allowsEmail = allowsEmail
+        self.requiresEmail = safeRequiresEmail
+        self.allowsTechnicalDetails = allowsTechnicalDetails
+        self.technicalDetailsDefaultOn = technicalDetailsDefaultOn
+        self.allowsScreenshot = allowsScreenshot
+        self.screenshotDefaultOn = screenshotDefaultOn
+        self.requiresNotes = requiresNotes
+    }
+
+    public static let standard = FeedbackFormPolicy()
+
+    public static let simpleIssue = FeedbackFormPolicy(
+        allowedKinds: [.bug],
+        defaultKind: .bug,
+        showsKindPicker: false,
+        showsSeverityPicker: false,
+        allowsEmail: true,
+        requiresEmail: false,
+        technicalDetailsDefaultOn: false,
+        screenshotDefaultOn: false
+    )
+
+    public static let bugOnly = FeedbackFormPolicy(
+        allowedKinds: [.bug],
+        defaultKind: .bug,
+        showsKindPicker: false,
+        showsSeverityPicker: false,
+        allowsTechnicalDetails: true,
+        technicalDetailsDefaultOn: true
+    )
+
+    public static let feedbackOnly = FeedbackFormPolicy(
+        allowedKinds: [.feedback],
+        defaultKind: .feedback,
+        showsKindPicker: false,
+        showsSeverityPicker: false,
+        allowsEmail: false,
+        allowsTechnicalDetails: false,
+        allowsScreenshot: false
+    )
+
+    public static let clientDebug = FeedbackFormPolicy(
+        allowedKinds: [.bug],
+        defaultKind: .bug,
+        showsKindPicker: false,
+        showsSeverityPicker: true,
+        allowsTechnicalDetails: true,
+        technicalDetailsDefaultOn: true,
+        allowsScreenshot: true,
+        screenshotDefaultOn: true
+    )
+
+    public var showsKindPickerWhenNeeded: Bool {
+        allowedKinds.count > 1 && showsKindPicker
+    }
+
+    public func with(
+        showsKindPicker: Bool? = nil,
+        showsSeverityPicker: Bool? = nil
+    ) -> FeedbackFormPolicy {
+        FeedbackFormPolicy(
+            allowedKinds: allowedKinds,
+            defaultKind: defaultKind,
+            showsKindPicker: showsKindPicker ?? self.showsKindPicker,
+            showsSeverityPicker: showsSeverityPicker ?? self.showsSeverityPicker,
+            defaultSeverity: defaultSeverity,
+            allowsEmail: allowsEmail,
+            requiresEmail: requiresEmail,
+            allowsTechnicalDetails: allowsTechnicalDetails,
+            technicalDetailsDefaultOn: technicalDetailsDefaultOn,
+            allowsScreenshot: allowsScreenshot,
+            screenshotDefaultOn: screenshotDefaultOn,
+            requiresNotes: requiresNotes
+        )
+    }
+}
+
 public struct FeedbackScreenshot: Equatable, Sendable {
     public let data: Data
     public let filename: String
@@ -163,10 +310,22 @@ public protocol FeedbackScreenshotProviding {
     func makeScreenshots() throws -> [FeedbackScreenshot]
 }
 
+public protocol FeedbackBreadcrumbProviding {
+    func currentBreadcrumbs() async -> [FeedbackBreadcrumb]
+}
+
 public protocol FeedbackSubmitting {
     func submit(_ request: FeedbackSubmissionRequest) async throws -> FeedbackSubmissionOutcome
 }
 
+public protocol FeedbackSubmissionRouteProviding {
+    var feedbackSubmissionRoute: FeedbackSubmissionRoute { get }
+}
+
 public protocol FeedbackFormSupportProviding {
     var feedbackFormSupportOptions: FeedbackFormSupportOptions { get }
+}
+
+public protocol FeedbackFormPolicyProviding {
+    var feedbackFormPolicy: FeedbackFormPolicy { get }
 }

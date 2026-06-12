@@ -37,8 +37,206 @@ final class FeedbackFormModelTests: XCTestCase {
         XCTAssertFalse(FeedbackFormCopy.standard.notesLabel.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.notesPlaceholder.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.submitButtonTitle.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.emailSubmitButtonTitle.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.shareSubmitButtonTitle.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.exportSubmitButtonTitle.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.submitButtonDisabledTitle.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.includeTechnicalDetailsLabel.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.includeScreenshotLabel.isEmpty)
+        XCTAssertEqual(FeedbackFormCopy.standard.exportSubmitButtonDisabledTitle, "Add notes to export")
+        XCTAssertEqual(FeedbackFormCopy.standard.unavailableSubmitButtonDisabledTitle, "Add notes to export")
+    }
+
+    func testSubmitButtonTextReflectsSubmissionRoute() {
+        let emailSubmitter = MockFeedbackSubmitter(route: .email)
+        let emailModel = makeModel(submitter: emailSubmitter)
+
+        XCTAssertEqual(emailModel.submitButtonTitle, FeedbackFormCopy.standard.emailSubmitButtonDisabledTitle)
+
+        emailModel.notes = "User report"
+        XCTAssertEqual(emailModel.submitButtonTitle, FeedbackFormCopy.standard.emailSubmitButtonTitle)
+        emailModel.notes = ""
+        XCTAssertEqual(emailModel.submitButtonTitle, FeedbackFormCopy.standard.emailSubmitButtonDisabledTitle)
+
+        let shareSubmitter = MockFeedbackSubmitter(route: .share)
+        let shareModel = makeModel(submitter: shareSubmitter)
+        XCTAssertEqual(shareModel.submitButtonTitle, FeedbackFormCopy.standard.shareSubmitButtonDisabledTitle)
+        shareModel.notes = "User report"
+        XCTAssertEqual(shareModel.submitButtonTitle, FeedbackFormCopy.standard.shareSubmitButtonTitle)
+        shareModel.notes = ""
+        XCTAssertEqual(shareModel.submitButtonTitle, FeedbackFormCopy.standard.shareSubmitButtonDisabledTitle)
+
+        let exportSubmitter = MockFeedbackSubmitter(route: .export)
+        let exportModel = makeModel(submitter: exportSubmitter)
+        XCTAssertEqual(exportModel.submitButtonTitle, FeedbackFormCopy.standard.exportSubmitButtonDisabledTitle)
+        exportModel.notes = "Export feedback"
+        XCTAssertEqual(exportModel.submitButtonTitle, FeedbackFormCopy.standard.exportSubmitButtonTitle)
+        exportModel.notes = ""
+        XCTAssertEqual(exportModel.submitButtonTitle, FeedbackFormCopy.standard.exportSubmitButtonDisabledTitle)
+
+        let unavailableSubmitter = MockFeedbackSubmitter(route: .unavailable)
+        let unavailableModel = makeModel(submitter: unavailableSubmitter)
+        XCTAssertEqual(unavailableModel.submitButtonTitle, FeedbackFormCopy.standard.unavailableSubmitButtonDisabledTitle)
+        unavailableModel.notes = "Export feedback"
+        XCTAssertEqual(unavailableModel.submitButtonTitle, FeedbackFormCopy.standard.unavailableSubmitButtonTitle)
+        unavailableModel.notes = ""
+        XCTAssertEqual(unavailableModel.submitButtonTitle, FeedbackFormCopy.standard.unavailableSubmitButtonDisabledTitle)
+    }
+
+    func testScreenshotPreviewStateControlsSubmissionPayload() async throws {
+        let submitter = MockFeedbackSubmitter(
+            supportOptions: .init(
+                allowsScreenshot: true,
+                screenshotEnabledByDefault: true
+            ),
+            screenshots: [
+                FeedbackScreenshot(
+                    data: Data("png".utf8),
+                    filename: "screenshot.png",
+                    contentType: "image/png",
+                )
+            ]
+        )
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug
+        )
+
+        model.notes = "Looks blurry"
+        await model.submit()
+
+        XCTAssertEqual(submitter.requests.last?.includeScreenshot, true)
+
+        model.notes = "Need more evidence"
+        model.removeAllScreenshots()
+        model.includeScreenshot = true
+        await model.submit()
+
+        XCTAssertEqual(submitter.requests.last?.includeScreenshot, false)
+    }
+
+    func testRemovingOneScreenshotOnlySendsTheRemainingAttachment() async throws {
+        let submitter = MockFeedbackSubmitter(
+            supportOptions: .init(
+                allowsScreenshot: true,
+                screenshotEnabledByDefault: true
+            ),
+            screenshots: [
+                FeedbackScreenshot(
+                    data: Data("first".utf8),
+                    filename: "first.png",
+                    contentType: "image/png",
+                ),
+                FeedbackScreenshot(
+                    data: Data("second".utf8),
+                    filename: "second.png",
+                    contentType: "image/png"
+                )
+            ]
+        )
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug
+        )
+
+        model.notes = "Need more evidence"
+        model.removeScreenshot(model.screenshotPreviews[0].id)
+
+        await model.submit()
+
+        let request = try XCTUnwrap(submitter.requests.last)
+        XCTAssertTrue(request.includeScreenshot)
+        XCTAssertEqual(request.screenshotAttachments.map(\.filename), ["second.png"])
+    }
+
+    func testSimpleIssuePolicyHidesKindPickerAndSeverityPicker() {
+        let model = makeModel(
+            submitter: MockFeedbackSubmitter(),
+            policy: .simpleIssue,
+            initialKind: .feedback
+        )
+
+        XCTAssertFalse(model.showsKindPicker)
+        XCTAssertFalse(model.showsSeverityPicker)
+        XCTAssertEqual(model.kind, .bug)
+    }
+
+    func testNotesAreRequiredByDefaultAndCanSubmitWhenProvided() async throws {
+        let submitter = MockFeedbackSubmitter()
+        let model = makeModel(submitter: submitter)
+
+        await model.submit()
+
+        XCTAssertEqual(model.errorMessage, FeedbackFormCopy.standard.validationErrorMessage)
+        XCTAssertEqual(submitter.requests.count, 0)
+
+        model.notes = "Could not export report."
+        await model.submit()
+        XCTAssertEqual(submitter.requests.count, 1)
+    }
+
+    func testEmailIsOptionalByDefault() async throws {
+        let submitter = MockFeedbackSubmitter()
+        let model = makeModel(submitter: submitter)
+        model.notes = "Could not export report."
+
+        await model.submit()
+
+        let request = try XCTUnwrap(submitter.requests.last)
+        XCTAssertNil(request.email)
+    }
+
+    func testEmailCanBeRequiredByPolicy() async throws {
+        let submitter = MockFeedbackSubmitter()
+        let model = makeModel(
+            submitter: submitter,
+            policy: FeedbackFormPolicy(
+                allowsEmail: true,
+                requiresEmail: true
+            )
+        )
+
+        model.notes = "Could not export report."
+        await model.submit()
+        XCTAssertEqual(submitter.requests.count, 0)
+        XCTAssertEqual(model.errorMessage, FeedbackFormCopy.standard.validationErrorMessage)
+
+        model.email = "user@example.com"
+        await model.submit()
+        XCTAssertEqual(submitter.requests.count, 1)
+        XCTAssertEqual(submitter.requests.last?.email, "user@example.com")
+    }
+
+    func testCustomCopyOverridesStillWorkForCTAAndValidationMessage() async throws {
+        let copy = FeedbackFormCopy {
+            $0.notesLabel = "What’s the issue?"
+            $0.notesPlaceholder = "Tell us what happened"
+            $0.submitButtonDisabledTitle = "Add a short description"
+            $0.shareSubmitButtonTitle = "Share report"
+            $0.validationErrorMessage = "Please share what happened."
+        }
+        let model = makeModel(
+            submitter: MockFeedbackSubmitter(route: .share),
+            copy: copy
+        )
+        let emailModel = makeModel(
+            submitter: MockFeedbackSubmitter(route: .email),
+            copy: copy
+        )
+
+        XCTAssertEqual(model.submitButtonTitle, copy.shareSubmitButtonDisabledTitle)
+        XCTAssertEqual(copy.notesLabel, "What’s the issue?")
+        XCTAssertEqual(copy.notesPlaceholder, "Tell us what happened")
+        model.notes = "App froze"
+        XCTAssertEqual(model.submitButtonTitle, copy.shareSubmitButtonTitle)
+        model.notes = ""
+        await model.submit()
+        XCTAssertEqual(model.errorMessage, copy.validationErrorMessage)
+
+        emailModel.notes = "User report"
+        XCTAssertEqual(emailModel.submitButtonTitle, copy.emailSubmitButtonTitle)
     }
 
     func testCustomCopyCanSupplyNotesLabelPlaceholderAndValidationMessage() async throws {
@@ -68,13 +266,28 @@ final class FeedbackFormModelTests: XCTestCase {
 
     func testConfiguredSupportOptionsShowTogglesAndUseDefaults() {
         let model = makeModel(
-            submitter: MockFeedbackSubmitter(),
+            submitter: MockFeedbackSubmitter(
+                supportOptions: .init(
+                    allowsTechnicalDetails: true,
+                    allowsScreenshot: true,
+                    technicalDetailsEnabledByDefault: true,
+                    screenshotEnabledByDefault: true
+                ),
+                screenshots: [
+                    FeedbackScreenshot(
+                        data: Data("png".utf8),
+                        filename: "screenshot.png",
+                        contentType: "image/png"
+                    )
+                ]
+            ),
             supportOptions: FeedbackFormSupportOptions(
                 allowsTechnicalDetails: true,
                 allowsScreenshot: true,
                 technicalDetailsEnabledByDefault: true,
                 screenshotEnabledByDefault: true
-            )
+            ),
+            policy: .clientDebug
         )
 
         XCTAssertTrue(model.showsTechnicalDetailsToggle)
@@ -88,9 +301,20 @@ final class FeedbackFormModelTests: XCTestCase {
             supportOptions: FeedbackFormSupportOptions(
                 allowsTechnicalDetails: true,
                 allowsScreenshot: true
-            )
+            ),
+            screenshots: [
+                FeedbackScreenshot(
+                    data: Data("png".utf8),
+                    filename: "screenshot.png",
+                    contentType: "image/png"
+                )
+            ]
         )
-        let model = makeModel(submitter: submitter, supportOptions: submitter.feedbackFormSupportOptions)
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug
+        )
         model.notes = "Still repros"
         model.includeTechnicalDetails = false
         model.includeScreenshot = false
@@ -198,7 +422,6 @@ final class FeedbackFormModelTests: XCTestCase {
                 accentColor: .accentColor,
                 font: .body
             ),
-            showsSeverityPicker: false,
             screenContext: "Composer"
         )
 
@@ -221,7 +444,6 @@ final class FeedbackFormModelTests: XCTestCase {
             model: makeModel(submitter: MockFeedbackSubmitter()),
             copy: .standard,
             style: .standard,
-            showsSeverityPicker: true,
             screenContext: nil
         )
 
@@ -252,14 +474,17 @@ final class FeedbackFormModelTests: XCTestCase {
         submitter: any FeedbackSubmitting,
         copy: FeedbackFormCopy = .standard,
         supportOptions: FeedbackFormSupportOptions = .disabled,
+        policy: FeedbackFormPolicy = .standard,
+        initialKind: FeedbackReportKind = .bug,
         deliveryHandler: FeedbackDeliveryHandler? = nil
     ) -> FeedbackFormViewModel {
         FeedbackFormViewModel(
             submitter: submitter,
-            initialKind: .bug,
+            initialKind: initialKind,
             copy: copy,
             screenContext: "InvoiceEditor",
             supportOptions: supportOptions,
+            policy: policy,
             deliveryHandler: deliveryHandler
         )
     }
@@ -319,25 +544,43 @@ private final class MockTransport: AppReportTransport {
     }
 }
 
-private final class MockFeedbackSubmitter: FeedbackSubmitting, FeedbackFormSupportProviding {
+private final class MockFeedbackSubmitter: FeedbackSubmitting, FeedbackFormSupportProviding, FeedbackFormPolicyProviding {
     var requests: [FeedbackSubmissionRequest] = []
     let feedbackFormSupportOptions: FeedbackFormSupportOptions
+    let feedbackSubmissionRoute: FeedbackSubmissionRoute
+    let feedbackFormPolicy: FeedbackFormPolicy
 
     private let outcome: FeedbackSubmissionOutcome
+    private let screenshots: [FeedbackScreenshot]
 
     init(
         outcome: FeedbackSubmissionOutcome = .submitted(
             AppReportSubmissionResponse(accepted: true, statusCode: 202)
         ),
-        supportOptions: FeedbackFormSupportOptions = .disabled
+        supportOptions: FeedbackFormSupportOptions = .disabled,
+        route: FeedbackSubmissionRoute = .endpoint,
+        screenshots: [FeedbackScreenshot] = []
     ) {
         self.outcome = outcome
         feedbackFormSupportOptions = supportOptions
+        feedbackSubmissionRoute = route
+        self.screenshots = screenshots
+        feedbackFormPolicy = .standard
     }
 
     func submit(_ request: FeedbackSubmissionRequest) async throws -> FeedbackSubmissionOutcome {
         requests.append(request)
         return outcome
+    }
+}
+
+extension MockFeedbackSubmitter: FeedbackSubmissionRouteProviding, FeedbackScreenshotProviding {
+    func currentBreadcrumbs() async -> [FeedbackBreadcrumb] {
+        []
+    }
+
+    func makeScreenshots() throws -> [FeedbackScreenshot] {
+        screenshots
     }
 }
 

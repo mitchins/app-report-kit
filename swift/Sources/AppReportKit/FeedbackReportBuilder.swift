@@ -19,7 +19,8 @@ public struct FeedbackReportBuilder {
         email: String? = nil,
         screen: String? = nil,
         diagnostics: [String: String] = [:],
-        attachments: [FeedbackAttachment] = []
+        attachments: [FeedbackAttachment] = [],
+        breadcrumbs: [FeedbackBreadcrumb] = []
     ) -> FeedbackReport {
         FeedbackReport(
             appId: appId,
@@ -30,7 +31,8 @@ public struct FeedbackReportBuilder {
                 severity: severity,
                 email: email,
                 diagnostics: diagnostics,
-                attachments: attachments
+                attachments: attachments,
+                breadcrumbs: breadcrumbs
             )
         )
     }

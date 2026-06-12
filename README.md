@@ -52,6 +52,63 @@ FeedbackForm(client: client, screenContext: "InvoiceEditor")
 
 If you do not want the built-in form, call `client.submit(...)` directly.
 
+## v1.3 form policy
+
+Use form policy presets to ship lighter forms without rebuilding UI:
+
+```swift
+import AppReportKit
+import AppReportKitUI
+
+let standard = FeedbackForm(
+    client: makeClient(...),
+    policy: .standard
+)
+
+let issueOnly = FeedbackForm(
+    client: makeClient(...),
+    policy: .simpleIssue,
+    copy: .issue
+)
+
+let pilotForm = FeedbackForm(
+    client: makeClient(...),
+    policy: .clientDebug,
+    copy: .improvement
+)
+```
+
+You can also provide your own `FeedbackFormPolicy` values:
+
+```swift
+let simpleOnlyBugPolicy = FeedbackFormPolicy(
+    allowedKinds: [.bug],
+    defaultKind: .bug,
+    showsSeverityPicker: false,
+    allowsScreenshot: true,
+    screenshotDefaultOn: false,
+    showsKindPicker: false
+)
+```
+
+## Simple client/pilot user form example
+
+Use `simpleIssue` for a short form where users only report one kind:
+
+```swift
+FeedbackForm(
+    submitter: submitter,
+    policy: .simpleIssue,
+    copy: .issue,
+    showsSeverityPicker: false
+)
+```
+
+This keeps the copy clear and keeps the user path short:
+- title: `Report a Problem`
+- notes heading: `What’s the issue?`
+- notes placeholder: `Tell us what happened`
+
 ## Diagnostics
 
 Use `AppReportKitDiagnostics` when a tester needs to send a useful bug report with notes, metadata, screenshots, and recent app-only network activity.

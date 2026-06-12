@@ -40,9 +40,36 @@ AppReportDiagnostics-<timestamp>.bundle/
   README.txt
 ```
 
+## Share/export package shape in v1.3
+
+The share/export flow now ships one file:
+
+```text
+AppReportDiagnostics-2026-06-12T150800.apprdiag.zip
+  report.json
+  metadata.json
+  network.har
+  README.txt
+  screenshots/
+    screenshot-1.png
+  [breadcrumbs.jsonl]
+```
+
+When you enable technical details, the package includes `network.har`; when no breadcrumbs are present, `breadcrumbs.jsonl` is omitted.
+
 `network.har` is included only when technical details are enabled and recorded events exist.
 
 Screenshots are included only when the host app supplies them.
+
+### Screenshot attachment behavior
+
+`AppReportKitUI` shows screenshot previews only when:
+
+- the submitter adopts `FeedbackScreenshotProviding`
+- screenshot support is available in diagnostics support options
+- policy permits screenshots for that form
+
+If the screenshot toggle is not visible, screenshots are not automatically attached to submissions.
 
 ## Email/share-only TestFlight flow
 
@@ -90,6 +117,59 @@ On iOS the diagnostics submitter checks `MFMailComposeViewController.canSendMail
 On macOS `email(...)` resolves to export/share only. It does not use `mailto:`.
 
 `temporaryDirectoryURL` remains valid until the host finishes presenting the mail/share flow. The host should then remove the exported files. `DiagnosticsDeliveryCleanup.cleanup(_:)` is the provided helper for that.
+
+## Form policy examples for AppReportKitUI
+
+```swift
+import AppReportKit
+import AppReportKitUI
+import AppReportKitDiagnostics
+
+let submitter = AppReportDiagnosticsSubmitter(
+    reportBuilder: FeedbackReportBuilder(appId: "justcards"),
+    delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+    support: .init(
+        networkRecorder: NetworkRecorder(),
+        screenshotProvider: MyScreenshotProvider()
+    )
+)
+
+// standard flow
+FeedbackForm(submitter: submitter, policy: .standard)
+
+// short issue-first form
+FeedbackForm(submitter: submitter, policy: .simpleIssue, copy: .issue)
+
+// single kind
+FeedbackForm(submitter: submitter, policy: .bugOnly)
+
+// no issue kind picker, feedback-only mode
+FeedbackForm(submitter: submitter, policy: .feedbackOnly, copy: .improvement)
+
+// client debug preset keeps technical details enabled by default
+FeedbackForm(submitter: submitter, policy: .clientDebug)
+
+// custom policy (explicit)
+let pilotPolicy = FeedbackFormPolicy(
+    allowedKinds: [.bug],
+    defaultKind: .bug,
+    showsKindPicker: false,
+    showsSeverityPicker: false,
+    allowsEmail: true,
+    requiresEmail: false,
+    allowsTechnicalDetails: true,
+    technicalDetailsDefaultOn: true,
+    allowsScreenshot: true,
+    screenshotDefaultOn: false,
+    requiresNotes: true
+)
+
+FeedbackForm(
+    submitter: submitter,
+    policy: pilotPolicy,
+    copy: .issue
+)
+```
 
 ## Worker endpoint behavior
 
@@ -154,6 +234,37 @@ let (data, response) = try await instrumentedSession.data(
 
 You can also wrap an API client or transport abstraction directly by calling `recorder.capture(request:taskMetadata:operation:)`.
 
+## Breadcrumb provider example
+
+```swift
+final class CheckoutBreadcrumbProvider: FeedbackBreadcrumbProviding {
+    func currentBreadcrumbs() async -> [FeedbackBreadcrumb] {
+        [
+            FeedbackBreadcrumb(
+                timestamp: Date(),
+                title: "Checkout opened",
+                metadata: ["flow": "checkout", "step": "start"]
+            ),
+            FeedbackBreadcrumb(
+                timestamp: Date().addingTimeInterval(20),
+                title: "Payment method selected",
+                metadata: ["flow": "checkout", "step": "payment"]
+            )
+        ]
+    }
+}
+
+let submitter = AppReportDiagnosticsSubmitter(
+    reportBuilder: FeedbackReportBuilder(appId: "justcards"),
+    delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+    support: .init(
+        networkRecorder: NetworkRecorder(),
+        screenshotProvider: MyScreenshotProvider(),
+        breadcrumbProvider: CheckoutBreadcrumbProvider()
+    )
+)
+```
+
 ## Privacy and disclosure
 
 - capture is app-only, not device-wide
@@ -162,4 +273,5 @@ You can also wrap an API client or transport abstraction directly by calling `re
 - logs may still contain app interaction data
 - host apps must disclose diagnostics collection where their privacy policy or local law requires it
 - email/share is less controlled than the Worker path and is intended for deliberate support/debugging workflows
-- encryption is future scope for higher-risk apps
+- screenshot capture UI (editor, annotate, camera picker) is future scope; host apps can continue to provide screenshots from existing app surfaces only
+- encryption for higher-risk report/distribution paths is future scope

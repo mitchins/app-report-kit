@@ -79,7 +79,8 @@ public final class AppReportClient: @unchecked Sendable {
                 severity: report.severity,
                 email: report.email?.trimmingCharacters(in: .whitespacesAndNewlines),
                 diagnostics: report.diagnostics ?? [:],
-                attachments: report.attachments
+                attachments: report.attachments,
+                breadcrumbs: report.breadcrumbs
             )
         )
 
@@ -118,7 +119,7 @@ extension AppReportClient: FeedbackSubmitting {
             email: request.email,
             screen: request.screen,
             diagnostics: diagnostics,
-            attachments: request.attachments
+            attachments: request.attachments + request.screenshotAttachments
         )
 
         let response = try await submit(report)

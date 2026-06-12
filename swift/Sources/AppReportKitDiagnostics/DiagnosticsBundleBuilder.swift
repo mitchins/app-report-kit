@@ -83,10 +83,16 @@ public struct DiagnosticsBundleBuilder {
         let reportURL = rootURL.appendingPathComponent("report.json")
         let metadataURL = rootURL.appendingPathComponent("metadata.json")
         let readmeURL = rootURL.appendingPathComponent("README.txt")
+        let breadcrumbsURL = rootURL.appendingPathComponent("breadcrumbs.jsonl")
 
         try writeReport(report, submittedAt: submittedAt, to: reportURL)
         try writeMetadata(report, to: metadataURL)
-        try writeReadme(hasNetworkEvents: !networkEvents.isEmpty, screenshotCount: screenshots.count, to: readmeURL)
+        try writeReadme(
+            hasNetworkEvents: !networkEvents.isEmpty,
+            screenshotCount: screenshots.count,
+            hasBreadcrumbs: !report.breadcrumbs.isEmpty,
+            to: readmeURL
+        )
 
         var attachments = [
             FeedbackPreparedAttachment(fileURL: reportURL, contentType: "application/json"),
@@ -99,6 +105,13 @@ public struct DiagnosticsBundleBuilder {
             try harExporter.export(networkEvents).write(to: networkURL)
             attachments.append(
                 FeedbackPreparedAttachment(fileURL: networkURL, contentType: "application/json")
+            )
+        }
+
+        if !report.breadcrumbs.isEmpty {
+            try writeBreadcrumbs(report.breadcrumbs, to: breadcrumbsURL)
+            attachments.append(
+                FeedbackPreparedAttachment(fileURL: breadcrumbsURL, contentType: "application/x-ndjson")
             )
         }
 
@@ -157,7 +170,8 @@ public struct DiagnosticsBundleBuilder {
             notes: report.notes,
             email: report.email,
             diagnostics: report.diagnostics ?? [:],
-            submittedAt: submittedAt
+            submittedAt: submittedAt,
+            breadcrumbs: report.breadcrumbs.isEmpty ? nil : report.breadcrumbs
         )
 
         try encode(payload).write(to: url)
@@ -181,6 +195,7 @@ public struct DiagnosticsBundleBuilder {
     private func writeReadme(
         hasNetworkEvents: Bool,
         screenshotCount: Int,
+        hasBreadcrumbs: Bool,
         to url: URL
     ) throws {
         let lines = [
@@ -191,6 +206,7 @@ public struct DiagnosticsBundleBuilder {
             "- app and device metadata",
             hasNetworkEvents ? "- recent app-only network logs" : "- no network log file was included",
             screenshotCount > 0 ? "- host-supplied screenshots" : "- no screenshots were included",
+            hasBreadcrumbs ? "- user navigation breadcrumbs" : "- no breadcrumbs were included",
             "",
             "Warnings:",
             "- logs may contain app interaction data",
@@ -215,6 +231,16 @@ public struct DiagnosticsBundleBuilder {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: date)
+    }
+
+    private func writeBreadcrumbs(_ breadcrumbs: [FeedbackBreadcrumb], to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let lines = breadcrumbs.map {
+            let encoded = try? encoder.encode($0)
+            return encoded.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        }
+        try Data(lines.joined(separator: "\n").utf8).write(to: url)
     }
 
     private func uniqueFilename(
@@ -253,6 +279,7 @@ private struct ReportPayload: Codable {
     let email: String?
     let diagnostics: [String: String]
     let submittedAt: Date
+    let breadcrumbs: [FeedbackBreadcrumb]?
 }
 
 private struct MetadataPayload: Codable {
