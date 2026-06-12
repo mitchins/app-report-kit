@@ -32,15 +32,21 @@ public struct AppReportEmailConfiguration: Sendable {
             let attachmentLine = includesDiagnostics
                 ? "Diagnostics are attached when available."
                 : "No diagnostics attachment was included."
-            return """
-            Notes:
-            \(report.notes)
+            var bodyLines = [
+                "Notes:",
+                "\(report.notes)",
+                "",
+                "App version/build: \(metadata.appVersion) (\(metadata.build))",
+                "OS/device: \(metadata.osName) \(metadata.osVersion) on \(metadata.deviceModel)"
+            ]
 
-            App version/build: \(metadata.appVersion) (\(metadata.build))
-            OS/device: \(metadata.osName) \(metadata.osVersion) on \(metadata.deviceModel)
-            User email: \(report.email ?? "Not provided")
-            \(attachmentLine)
-            """
+            if let userEmail = report.email?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !userEmail.isEmpty {
+                bodyLines.append("User email: \(userEmail)")
+            }
+
+            bodyLines.append(attachmentLine)
+            return bodyLines.joined(separator: "\n")
         }
     ) {
         self.recipients = recipients
@@ -205,11 +211,24 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         allowEndpointScreenshotAttachments = configuration.allowEndpointScreenshotAttachments
         dateProvider = configuration.dateProvider
         diagnosticsRedactor = NetworkRedactor(policy: support.networkRecorder?.capturePolicy ?? .metadataOnly)
-        feedbackFormPolicy = .standard
+        feedbackFormPolicy = Self.feedbackFormPolicy(for: delivery)
         feedbackFormSupportOptions = FeedbackFormSupportOptions(
             allowsTechnicalDetails: support.networkRecorder != nil,
             allowsScreenshot: support.screenshotProvider != nil
         )
+    }
+
+    private static func feedbackFormPolicy(for delivery: AppReportDelivery) -> FeedbackFormPolicy {
+        switch delivery {
+        case .email:
+            return FeedbackFormPolicy(
+                .init(
+                    emailOptions: .init(allowsEmail: false, requiresEmail: false)
+                )
+            )
+        case .endpoint, .endpointWithEmailFallback:
+            return .standard
+        }
     }
 
     public var feedbackSubmissionRoute: FeedbackSubmissionRoute {
