@@ -83,6 +83,23 @@ final class FeedbackFormModelTests: XCTestCase {
         XCTAssertEqual(unavailableModel.submitButtonTitle, FeedbackFormCopy.standard.unavailableSubmitButtonDisabledTitle)
     }
 
+    func testEmailFieldHiddenForEmailRouteEvenWhenPolicyAllowsEmail() {
+        let submitter = MockFeedbackSubmitter(route: .email)
+        let model = makeModel(
+            submitter: submitter,
+            policy: FeedbackFormPolicy(
+                .init(
+                    emailOptions: .init(
+                        allowsEmail: true,
+                        requiresEmail: false
+                    )
+                )
+            )
+        )
+
+        XCTAssertFalse(model.showsEmailField)
+    }
+
     func testScreenshotPreviewStateControlsSubmissionPayload() async throws {
         let submitter = MockFeedbackSubmitter(
             supportOptions: .init(
