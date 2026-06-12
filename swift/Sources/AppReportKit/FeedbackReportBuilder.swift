@@ -13,24 +13,22 @@ public struct FeedbackReportBuilder {
     }
 
     public func makeReport(
-        kind: FeedbackReportKind,
-        notes: String,
-        severity: FeedbackSeverity = .normal,
-        email: String? = nil,
-        screen: String? = nil,
+        details: FeedbackSubmissionRequest.Details,
         diagnostics: [String: String] = [:],
-        attachments: [FeedbackAttachment] = []
+        attachments: [FeedbackAttachment] = [],
+        breadcrumbs: [FeedbackBreadcrumb] = []
     ) -> FeedbackReport {
         FeedbackReport(
             appId: appId,
-            kind: kind,
-            notes: notes,
-            metadata: metadataProvider.makeMetadata(screen: screen),
+            kind: details.kind,
+            notes: details.notes,
+            metadata: metadataProvider.makeMetadata(screen: details.screen),
             submission: .init(
-                severity: severity,
-                email: email,
+                severity: details.severity,
+                email: details.email,
                 diagnostics: diagnostics,
-                attachments: attachments
+                attachments: attachments,
+                breadcrumbs: breadcrumbs
             )
         )
     }

@@ -112,8 +112,10 @@ final class SupportTests: XCTestCase {
         )
 
         let report = builder.makeReport(
-            kind: .feedback,
-            notes: "Looks good",
+            details: .init(
+                kind: .feedback,
+                notes: "Looks good"
+            ),
             diagnostics: ["context": "preview"]
         )
 
@@ -145,6 +147,40 @@ final class SupportTests: XCTestCase {
             let contents = try String(contentsOf: fileURL)
             XCTAssertFalse(contents.contains("api.github.com"), "Unexpected GitHub endpoint in \(fileURL.lastPathComponent)")
             XCTAssertFalse(contents.contains("github.com"), "Unexpected GitHub URL in \(fileURL.lastPathComponent)")
+        }
+    }
+
+    func testAppReportKitUISourcesRemainLightweightWithoutNetworkCaptureLogic() throws {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let uiSourcesURL = rootURL
+            .appendingPathComponent("Sources", isDirectory: true)
+            .appendingPathComponent("AppReportKitUI", isDirectory: true)
+        let enumerator = FileManager.default.enumerator(
+            at: uiSourcesURL,
+            includingPropertiesForKeys: nil
+        )
+
+        while let fileURL = enumerator?.nextObject() as? URL {
+            guard fileURL.pathExtension == "swift" else {
+                continue
+            }
+
+            let contents = try String(contentsOf: fileURL)
+            XCTAssertFalse(
+                contents.contains("AppReportNetworkCapture"),
+                "Unexpected network-capture type in \(fileURL.lastPathComponent)"
+            )
+            XCTAssertFalse(
+                contents.contains("NetworkRecorder"),
+                "Unexpected network-capture type in \(fileURL.lastPathComponent)"
+            )
+            XCTAssertFalse(
+                contents.contains("capture(") && contents.contains("URLSession"),
+                "Unexpected URLSession capture plumbing in \(fileURL.lastPathComponent)"
+            )
         }
     }
 

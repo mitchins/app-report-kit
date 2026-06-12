@@ -147,8 +147,10 @@ final class AppReportClientTests: XCTestCase {
 
         let outcome = try await client.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "No extra details",
+                details: .init(
+                    kind: .bug,
+                    notes: "No extra details"
+                ),
                 options: .init(includeTechnicalDetails: false)
             )
         )
@@ -167,8 +169,10 @@ final class AppReportClientTests: XCTestCase {
 
         let outcome = try await client.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Need details",
+                details: .init(
+                    kind: .bug,
+                    notes: "Need details"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )

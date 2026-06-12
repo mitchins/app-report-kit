@@ -30,6 +30,51 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: materialization.rootURL.path))
     }
 
+    func testBundleIncludesBreadcrumbsFileWhenProvided() throws {
+        let builder = DiagnosticsBundleBuilder()
+        let materialization = try builder.build(
+            report: makeReport(
+                breadcrumbs: [
+                    FeedbackBreadcrumb(
+                        timestamp: Date(timeIntervalSince1970: 0),
+                        title: "Opened report screen"
+                    )
+                ]
+            ),
+            submittedAt: Date(timeIntervalSince1970: 0),
+            networkEvents: [],
+            screenshots: []
+        )
+        defer {
+            try? builder.cleanup(materialization)
+        }
+
+        let fileURL = materialization.rootURL.appendingPathComponent("breadcrumbs.jsonl")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+
+        let content = try String(contentsOf: fileURL)
+        XCTAssertTrue(content.contains("Opened report screen"))
+    }
+
+    func testBundleOmitsBreadcrumbsFileWhenNoBreadcrumbs() throws {
+        let builder = DiagnosticsBundleBuilder()
+        let materialization = try builder.build(
+            report: makeReport(),
+            submittedAt: Date(timeIntervalSince1970: 0),
+            networkEvents: [],
+            screenshots: []
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: materialization.rootURL
+                    .appendingPathComponent("breadcrumbs.jsonl")
+                    .path
+            )
+        )
+
+        try builder.cleanup(materialization)
+    }
+
     func testBundleIncludesDiagnosticsDictionaryInReportJSON() throws {
         let builder = DiagnosticsBundleBuilder()
         let materialization = try builder.build(
@@ -166,7 +211,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testEmailOnlyDeliveryCanPrepareMailPayloadWhenAvailable() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .iOS
@@ -174,8 +219,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -195,7 +242,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testMailUnavailableFallsBackToSharePayload() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -203,8 +250,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -214,12 +263,22 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         }
 
         XCTAssertTrue(share.message.contains("Export failed"))
-        XCTAssertGreaterThanOrEqual(share.itemURLs.count, 3)
+        XCTAssertEqual(share.itemURLs.count, 1)
         XCTAssertTrue(share.itemURLs.allSatisfy { !$0.hasDirectoryPath })
+        XCTAssertEqual(share.itemURLs.first?.pathExtension, "zip")
+    }
+
+    func testDiagnosticsSubmitterDefaultsToStandardPolicy() async {
+        let submitter = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: true,
+            platform: .iOS
+        )
+        XCTAssertEqual(submitter.feedbackFormPolicy, .standard)
     }
 
     func testPendingDeliveryBundleRedactsCamelCaseDiagnosticsKeys() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -227,8 +286,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 payload: .init(diagnostics: [
                     "accessToken": "top-secret",
                     "lastAction": "Tapped Export"
@@ -240,10 +301,9 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             return XCTFail("Expected share delivery")
         }
 
-        let reportURL = try XCTUnwrap(
-            share.itemURLs.first(where: { $0.lastPathComponent == "report.json" })
-        )
-        let data = try Data(contentsOf: reportURL)
+        let packageURL = try XCTUnwrap(share.itemURLs.first)
+        let reportData = try readZipEntry(from: packageURL, named: "report.json")
+        let data = try XCTUnwrap(reportData)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let diagnostics = try XCTUnwrap(json["diagnostics"] as? [String: String])
 
@@ -251,20 +311,160 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertEqual(diagnostics["lastAction"], "Tapped Export")
     }
 
+    func testSingleFileSharePackageContainsExpectedArtifacts() async throws {
+        let submitter = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: false,
+            platform: .iOS
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true)
+            )
+        )
+
+        guard case let .needsUserAction(.share(share)) = outcome else {
+            return XCTFail("Expected share delivery")
+        }
+        let packageURL = try XCTUnwrap(share.itemURLs.first)
+        let packageEntries = try listZipEntries(at: packageURL)
+
+        XCTAssertTrue(packageEntries.contains("report.json"))
+        XCTAssertTrue(packageEntries.contains("metadata.json"))
+        XCTAssertTrue(packageEntries.contains("README.txt"))
+        XCTAssertTrue(packageEntries.contains("network.har"))
+        XCTAssertTrue(
+            packageEntries.contains("screenshots/screenshot-1.png"),
+            "Entries: \(packageEntries)"
+        )
+        XCTAssertFalse(packageEntries.contains("screenshots"))
+        XCTAssertEqual(share.itemURLs.count, 1)
+
+        guard let firstEntryName = packageEntries.first(where: { $0 == "report.json" }) else {
+            return XCTFail("Expected report.json entry")
+        }
+        XCTAssertEqual(firstEntryName, "report.json")
+    }
+
+    func testSharePackageDoesNotContainUnredactedSecrets() async throws {
+        let submitter = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: false,
+            platform: .iOS
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                payload: .init(diagnostics: ["authToken": "top-secret", "safeKey": "value"])
+            )
+        )
+
+        guard case let .needsUserAction(.share(share)) = outcome else {
+            return XCTFail("Expected share delivery")
+        }
+
+        let packageURL = try XCTUnwrap(share.itemURLs.first)
+        let reportData = try XCTUnwrap(readZipEntry(from: packageURL, named: "report.json"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: reportData) as? [String: Any])
+        let diagnostics = try XCTUnwrap(json["diagnostics"] as? [String: String])
+
+        XCTAssertEqual(diagnostics["authToken"], "<redacted>")
+        XCTAssertEqual(diagnostics["safeKey"], "value")
+    }
+
+    func testSharePackageRedactsBreadcrumbMetadata() async throws {
+        let submitter = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: false,
+            platform: .iOS,
+            breadcrumbProvider: StaticBreadcrumbProvider()
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: true)
+            )
+        )
+
+        guard case let .needsUserAction(.share(share)) = outcome else {
+            return XCTFail("Expected share delivery")
+        }
+
+        let packageURL = try XCTUnwrap(share.itemURLs.first)
+        let reportData = try XCTUnwrap(readZipEntry(from: packageURL, named: "report.json"))
+        let reportJSON = try JSONSerialization.jsonObject(with: reportData) as? [String: Any]
+        let json = try XCTUnwrap(reportJSON)
+        let breadcrumbs = try XCTUnwrap(json["breadcrumbs"] as? [[String: Any]])
+        let firstBreadcrumb = try XCTUnwrap(breadcrumbs.first)
+        let metadata = try XCTUnwrap(firstBreadcrumb["metadata"] as? [String: String])
+
+        XCTAssertEqual(metadata["authToken"], "<redacted>")
+        XCTAssertEqual(metadata["route"], "safe-route")
+        XCTAssertFalse(metadata.values.contains("top-secret"))
+
+        let breadcrumbsData = try XCTUnwrap(readZipEntry(from: packageURL, named: "breadcrumbs.jsonl"))
+        let breadcrumbsText = try XCTUnwrap(String(data: breadcrumbsData, encoding: .utf8))
+        XCTAssertTrue(breadcrumbsText.contains("\"authToken\":\"<redacted>\""))
+        XCTAssertFalse(breadcrumbsText.contains("top-secret"))
+    }
+
     func testMacOSAlwaysUsesShareExportForEmailDelivery() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .macOS
         )
 
         let outcome = try await submitter.submit(
-            FeedbackSubmissionRequest(kind: .bug, notes: "Export failed")
+            FeedbackSubmissionRequest(details: .init(kind: .bug, notes: "Export failed"))
         )
 
         guard case .needsUserAction(.share) = outcome else {
             return XCTFail("Expected macOS share/export behavior")
         }
+    }
+
+    func testSubmissionRouteReflectsPlatformAndMailAvailability() async {
+        let iOSEmailRoute = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: true,
+            platform: .iOS
+        )
+        XCTAssertEqual(iOSEmailRoute.feedbackSubmissionRoute, .email)
+
+        let iOSShareRoute = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: false,
+            platform: .iOS
+        )
+        XCTAssertEqual(iOSShareRoute.feedbackSubmissionRoute, .share)
+
+        let macOSExportRoute = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: false,
+            platform: .macOS
+        )
+        XCTAssertEqual(macOSExportRoute.feedbackSubmissionRoute, .export)
+
+        let unavailableRoute = await makeDiagnosticsSubmitter(
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            mailAvailability: false,
+            platform: .other
+        )
+        XCTAssertEqual(unavailableRoute.feedbackSubmissionRoute, .unavailable)
     }
 
     func testEndpointFailureDoesNotFallbackUnlessPolicyAllowsIt() async throws {
@@ -274,10 +474,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             delivery: .endpointWithEmailFallback(
                 client,
                 .standard(recipient: "support@example.com", appName: "JustCards"),
-                fallbackPolicy: EmailFallbackPolicy(allowWhenNoEndpointConfigured: true, allowWhenEndpointFails: false)
+                fallbackPolicy: EmailFallbackPolicy(allowWhenEndpointFails: false)
             ),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(
@@ -289,8 +489,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         do {
             _ = try await submitter.submit(
                 FeedbackSubmissionRequest(
-                    kind: .bug,
-                    notes: "Still broken",
+                    details: .init(
+                        kind: .bug,
+                        notes: "Still broken"
+                    ),
                     options: .init(includeTechnicalDetails: true)
                 )
             )
@@ -307,10 +509,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             delivery: .endpointWithEmailFallback(
                 client,
                 .standard(recipient: "support@example.com", appName: "JustCards"),
-                fallbackPolicy: EmailFallbackPolicy(allowWhenNoEndpointConfigured: true, allowWhenEndpointFails: true)
+                fallbackPolicy: EmailFallbackPolicy(allowWhenEndpointFails: true)
             ),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(
@@ -321,8 +523,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Still broken",
+                details: .init(
+                    kind: .bug,
+                    notes: "Still broken"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -345,7 +549,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(attachBundleToEndpoint: false)
@@ -353,8 +557,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Broken export",
+                details: .init(
+                    kind: .bug,
+                    notes: "Broken export"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -385,7 +591,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(
@@ -396,8 +602,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Broken export",
+                details: .init(
+                    kind: .bug,
+                    notes: "Broken export"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -422,7 +630,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(attachBundleToEndpoint: true)
@@ -430,8 +638,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Broken export",
+                details: .init(
+                    kind: .bug,
+                    notes: "Broken export"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -446,7 +656,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testPendingDeliveryCleanupRemovesTemporaryDirectory() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -454,8 +664,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -476,6 +688,50 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         try DiagnosticsDeliveryCleanup.cleanup(delivery)
         XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryDirectoryURL.path))
+    }
+
+    func testPendingDeliveryCleansUpBundleWhenPackagingFails() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                bundleBuilder: DiagnosticsBundleBuilder(temporaryDirectory: tempDirectory),
+                bundlePackager: ThrowingPackager(),
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: false),
+                platform: .iOS
+            )
+        )
+
+        do {
+            _ = try await submitter.submit(
+                FeedbackSubmissionRequest(
+                    details: .init(
+                        kind: .bug,
+                        notes: "Export failed"
+                    ),
+                    options: .init(includeTechnicalDetails: true)
+                )
+            )
+            XCTFail("Expected packaging failure")
+        } catch {
+            let remainingItems = try FileManager.default.contentsOfDirectory(
+                at: tempDirectory,
+                includingPropertiesForKeys: nil
+            )
+            XCTAssertTrue(remainingItems.isEmpty)
+        }
     }
 
     func testPackageManifestKeepsDiagnosticsOptional() throws {
@@ -506,15 +762,17 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     private func makeDiagnosticsSubmitter(
         delivery: AppReportDelivery,
         mailAvailability: Bool,
-        platform: DiagnosticsDeliveryPlatform
-    ) -> AppReportDiagnosticsSubmitter {
+        platform: DiagnosticsDeliveryPlatform,
+        breadcrumbProvider: FeedbackBreadcrumbProviding? = nil
+    ) async -> AppReportDiagnosticsSubmitter {
         AppReportDiagnosticsSubmitter(
             reportBuilder: makeReportBuilder(),
             delivery: delivery,
             support: .init(
                 diagnosticsProvider: FixedDiagnosticsProvider(),
-                networkRecorder: makeRecorder(),
-                screenshotProvider: StaticScreenshotProvider()
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider(),
+                breadcrumbProvider: breadcrumbProvider
             ),
             configuration: .init(
                 mailAvailabilityChecker: StaticMailAvailabilityChecker(value: mailAvailability),
@@ -530,51 +788,51 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         )
     }
 
-    private func makeReport() -> FeedbackReport {
+    private func makeReport(
+        breadcrumbs: [FeedbackBreadcrumb] = []
+    ) -> FeedbackReport {
         makeReportBuilder().makeReport(
-            kind: .bug,
-            notes: "Broken export",
-            severity: .high,
-            email: "user@example.com",
+            details: .init(
+                kind: .bug,
+                notes: "Broken export",
+                severity: .high,
+                email: "user@example.com"
+            ),
             diagnostics: [
                 "networkEventCount": "1",
                 "lastAction": "Tapped Export"
-            ]
+            ],
+            breadcrumbs: breadcrumbs
         )
     }
 
-    private func makeRecorder() -> NetworkRecorder {
+    private func makeRecorder() async -> NetworkRecorder {
         let recorder = NetworkRecorder(
             policy: NetworkCapturePolicy(
                 capturesRequestBodyPreview: true,
                 capturesResponseBodyPreview: true
             )
         )
-        let semaphore = DispatchSemaphore(value: 0)
-        Task {
-            var request = URLRequest(url: URL(string: "https://example.com/orders?token=secret")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer top-secret", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = Data(#"{"password":"abc123"}"#.utf8)
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            await recorder.record(
-                request: request,
-                startedAt: Date(timeIntervalSince1970: 0),
-                outcome: .init(
-                    response: response,
-                    responseBody: Data(#"{"ok":true}"#.utf8),
-                    completedAt: Date(timeIntervalSince1970: 1)
-                )
+        var request = URLRequest(url: URL(string: "https://example.com/orders?token=secret")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer top-secret", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(#"{"password":"abc123"}"#.utf8)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        await recorder.record(
+            request: request,
+            startedAt: Date(timeIntervalSince1970: 0),
+            outcome: .init(
+                response: response,
+                responseBody: Data(#"{"ok":true}"#.utf8),
+                completedAt: Date(timeIntervalSince1970: 1)
             )
-            semaphore.signal()
-        }
-        semaphore.wait()
+        )
         return recorder
     }
 
@@ -630,6 +888,125 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         let declarationPrefix = #".target( name: "\#(targetName)", dependencies: ["\#(dependency)"]"#
         return normalizedContents.contains(declarationPrefix)
     }
+
+    private func listZipEntries(at zipURL: URL) throws -> [String] {
+        let data = try Data(contentsOf: zipURL)
+        guard let eocdStart = locateEOCD(in: data) else {
+            return []
+        }
+
+        let totalEntries = Int(readUInt16(from: data, at: eocdStart + 10))
+        let centralDirectoryOffset = Int(readUInt32(from: data, at: eocdStart + 16))
+        var cursor = centralDirectoryOffset
+        var names: [String] = []
+
+        for _ in 0..<totalEntries {
+            let signature = readUInt32(from: data, at: cursor)
+            guard signature == 0x0201_4b50 else {
+                break
+            }
+
+            let nameLength = Int(readUInt16(from: data, at: cursor + 28))
+            let extraLength = Int(readUInt16(from: data, at: cursor + 30))
+            let commentLength = Int(readUInt16(from: data, at: cursor + 32))
+            let nameStart = cursor + 46
+            let nameEnd = nameStart + nameLength
+            let nameData = data.subdata(in: nameStart..<nameEnd)
+            if let name = String(data: nameData, encoding: .utf8) {
+                names.append(name)
+            }
+
+            cursor = nameEnd + extraLength + commentLength
+        }
+
+        return names
+    }
+
+    private func readZipEntry(from zipURL: URL, named entryName: String) throws -> Data? {
+        let data = try Data(contentsOf: zipURL)
+        guard let eocdStart = locateEOCD(in: data) else {
+            return nil
+        }
+
+        let totalEntries = Int(readUInt16(from: data, at: eocdStart + 10))
+        let centralDirectoryOffset = Int(readUInt32(from: data, at: eocdStart + 16))
+        var cursor = centralDirectoryOffset
+
+        for _ in 0..<totalEntries {
+            guard readUInt32(from: data, at: cursor) == 0x0201_4b50 else {
+                return nil
+            }
+
+            let nameLength = Int(readUInt16(from: data, at: cursor + 28))
+            let extraLength = Int(readUInt16(from: data, at: cursor + 30))
+            let commentLength = Int(readUInt16(from: data, at: cursor + 32))
+            let localHeaderOffset = Int(readUInt32(from: data, at: cursor + 42))
+            let nameStart = cursor + 46
+            let nameEnd = nameStart + nameLength
+            let nameData = data.subdata(in: nameStart..<nameEnd)
+            let centralName = String(data: nameData, encoding: .utf8)
+
+            let compressedSize = Int(readUInt32(from: data, at: cursor + 20))
+            if centralName == entryName {
+                let localNameLen = Int(readUInt16(from: data, at: localHeaderOffset + 26))
+                let localExtraLen = Int(readUInt16(from: data, at: localHeaderOffset + 28))
+                let localDataStart = localHeaderOffset + 30 + localNameLen + localExtraLen
+                let localDataEnd = localDataStart + compressedSize
+                return data.subdata(in: localDataStart..<localDataEnd)
+            }
+
+            cursor = nameEnd + extraLength + commentLength
+        }
+
+        return nil
+    }
+
+    private func locateEOCD(in data: Data) -> Int? {
+        if data.count < 22 {
+            return nil
+        }
+
+        let maxOffset = max(0, data.count - 66_000)
+        if data.count < maxOffset + 4 {
+            return nil
+        }
+
+        for index in stride(from: data.count - 4, through: maxOffset, by: -1) {
+            if data[index] == 0x50,
+               data[index + 1] == 0x4b,
+               data[index + 2] == 0x05,
+               data[index + 3] == 0x06 {
+                return index
+            }
+        }
+
+        return nil
+    }
+
+    private func readUInt16(from data: Data, at offset: Int) -> UInt16 {
+        guard data.count >= offset + 2 else {
+            return 0
+        }
+
+        return UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+    }
+
+    private func readUInt32(from data: Data, at offset: Int) -> UInt32 {
+        guard data.count >= offset + 4 else {
+            return 0
+        }
+
+        return UInt32(data[offset])
+            | (UInt32(data[offset + 1]) << 8)
+            | (UInt32(data[offset + 2]) << 16)
+            | (UInt32(data[offset + 3]) << 24)
+    }
+}
+
+private struct ThrowingPackager: DiagnosticsBundlePackager {
+    func package(at _: URL, filename _: String) throws -> URL {
+        throw NSError(domain: "DiagnosticsBundlePackagerTest", code: 1)
+    }
 }
 
 private struct FixedDiagnosticsProvider: FeedbackDiagnosticsProvider {
@@ -646,6 +1023,21 @@ private struct StaticScreenshotProvider: FeedbackScreenshotProviding {
                 filename: "screenshot-1.png",
                 contentType: "image/png",
                 description: "Current screen"
+            )
+        ]
+    }
+}
+
+private struct StaticBreadcrumbProvider: FeedbackBreadcrumbProviding {
+    func currentBreadcrumbs() async -> [FeedbackBreadcrumb] {
+        [
+            FeedbackBreadcrumb(
+                timestamp: Date(timeIntervalSince1970: 0),
+                title: "Submitted bug report",
+                metadata: [
+                    "authToken": "top-secret",
+                    "route": "safe-route"
+                ]
             )
         ]
     }
