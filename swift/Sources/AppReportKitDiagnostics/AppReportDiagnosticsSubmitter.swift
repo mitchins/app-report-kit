@@ -6,14 +6,11 @@ import MessageUI
 #endif
 
 public struct EmailFallbackPolicy: Equatable, Sendable {
-    public let allowWhenNoEndpointConfigured: Bool
     public let allowWhenEndpointFails: Bool
 
     public init(
-        allowWhenNoEndpointConfigured: Bool = true,
         allowWhenEndpointFails: Bool = false
     ) {
-        self.allowWhenNoEndpointConfigured = allowWhenNoEndpointConfigured
         self.allowWhenEndpointFails = allowWhenEndpointFails
     }
 }
@@ -430,10 +427,16 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             )
         }
 
-        let packageURL = try bundlePackager.package(
-            at: bundle.rootURL,
-            filename: bundlePackageFilename(for: prepared.submittedAt)
-        )
+        let packageURL: URL
+        do {
+            packageURL = try bundlePackager.package(
+                at: bundle.rootURL,
+                filename: bundlePackageFilename(for: prepared.submittedAt)
+            )
+        } catch {
+            try? bundleBuilder.cleanup(bundle)
+            throw error
+        }
         return .needsUserAction(
             .share(
                 FeedbackPendingShare(

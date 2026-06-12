@@ -211,7 +211,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testEmailOnlyDeliveryCanPrepareMailPayloadWhenAvailable() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .iOS
@@ -242,7 +242,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testMailUnavailableFallsBackToSharePayload() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -268,8 +268,8 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertEqual(share.itemURLs.first?.pathExtension, "zip")
     }
 
-    func testDiagnosticsSubmitterDefaultsToStandardPolicy() {
-        let submitter = makeDiagnosticsSubmitter(
+    func testDiagnosticsSubmitterDefaultsToStandardPolicy() async {
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .iOS
@@ -278,7 +278,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testPendingDeliveryBundleRedactsCamelCaseDiagnosticsKeys() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -312,7 +312,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testSingleFileSharePackageContainsExpectedArtifacts() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -352,7 +352,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testSharePackageDoesNotContainUnredactedSecrets() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -382,7 +382,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testSharePackageRedactsBreadcrumbMetadata() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS,
@@ -422,7 +422,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testMacOSAlwaysUsesShareExportForEmailDelivery() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .macOS
@@ -437,29 +437,29 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         }
     }
 
-    func testSubmissionRouteReflectsPlatformAndMailAvailability() {
-        let iOSEmailRoute = makeDiagnosticsSubmitter(
+    func testSubmissionRouteReflectsPlatformAndMailAvailability() async {
+        let iOSEmailRoute = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .iOS
         )
         XCTAssertEqual(iOSEmailRoute.feedbackSubmissionRoute, .email)
 
-        let iOSShareRoute = makeDiagnosticsSubmitter(
+        let iOSShareRoute = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
         )
         XCTAssertEqual(iOSShareRoute.feedbackSubmissionRoute, .share)
 
-        let macOSExportRoute = makeDiagnosticsSubmitter(
+        let macOSExportRoute = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .macOS
         )
         XCTAssertEqual(macOSExportRoute.feedbackSubmissionRoute, .export)
 
-        let unavailableRoute = makeDiagnosticsSubmitter(
+        let unavailableRoute = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .other
@@ -474,10 +474,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             delivery: .endpointWithEmailFallback(
                 client,
                 .standard(recipient: "support@example.com", appName: "JustCards"),
-                fallbackPolicy: EmailFallbackPolicy(allowWhenNoEndpointConfigured: true, allowWhenEndpointFails: false)
+                fallbackPolicy: EmailFallbackPolicy(allowWhenEndpointFails: false)
             ),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(
@@ -509,10 +509,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             delivery: .endpointWithEmailFallback(
                 client,
                 .standard(recipient: "support@example.com", appName: "JustCards"),
-                fallbackPolicy: EmailFallbackPolicy(allowWhenNoEndpointConfigured: true, allowWhenEndpointFails: true)
+                fallbackPolicy: EmailFallbackPolicy(allowWhenEndpointFails: true)
             ),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(
@@ -549,7 +549,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(attachBundleToEndpoint: false)
@@ -591,7 +591,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(
@@ -630,7 +630,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             reportBuilder: makeReportBuilder(),
             delivery: .endpoint(client),
             support: .init(
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
             configuration: .init(attachBundleToEndpoint: true)
@@ -656,7 +656,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
     }
 
     func testPendingDeliveryCleanupRemovesTemporaryDirectory() async throws {
-        let submitter = makeDiagnosticsSubmitter(
+        let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: false,
             platform: .iOS
@@ -690,6 +690,50 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryDirectoryURL.path))
     }
 
+    func testPendingDeliveryCleansUpBundleWhenPackagingFails() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                bundleBuilder: DiagnosticsBundleBuilder(temporaryDirectory: tempDirectory),
+                bundlePackager: ThrowingPackager(),
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: false),
+                platform: .iOS
+            )
+        )
+
+        do {
+            _ = try await submitter.submit(
+                FeedbackSubmissionRequest(
+                    details: .init(
+                        kind: .bug,
+                        notes: "Export failed"
+                    ),
+                    options: .init(includeTechnicalDetails: true)
+                )
+            )
+            XCTFail("Expected packaging failure")
+        } catch {
+            let remainingItems = try FileManager.default.contentsOfDirectory(
+                at: tempDirectory,
+                includingPropertiesForKeys: nil
+            )
+            XCTAssertTrue(remainingItems.isEmpty)
+        }
+    }
+
     func testPackageManifestKeepsDiagnosticsOptional() throws {
         let packageURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -720,13 +764,13 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         mailAvailability: Bool,
         platform: DiagnosticsDeliveryPlatform,
         breadcrumbProvider: FeedbackBreadcrumbProviding? = nil
-    ) -> AppReportDiagnosticsSubmitter {
+    ) async -> AppReportDiagnosticsSubmitter {
         AppReportDiagnosticsSubmitter(
             reportBuilder: makeReportBuilder(),
             delivery: delivery,
             support: .init(
                 diagnosticsProvider: FixedDiagnosticsProvider(),
-                networkRecorder: makeRecorder(),
+                networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider(),
                 breadcrumbProvider: breadcrumbProvider
             ),
@@ -762,38 +806,33 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         )
     }
 
-    private func makeRecorder() -> NetworkRecorder {
+    private func makeRecorder() async -> NetworkRecorder {
         let recorder = NetworkRecorder(
             policy: NetworkCapturePolicy(
                 capturesRequestBodyPreview: true,
                 capturesResponseBodyPreview: true
             )
         )
-        let semaphore = DispatchSemaphore(value: 0)
-        Task {
-            var request = URLRequest(url: URL(string: "https://example.com/orders?token=secret")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer top-secret", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = Data(#"{"password":"abc123"}"#.utf8)
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "application/json"]
-            )!
-            await recorder.record(
-                request: request,
-                startedAt: Date(timeIntervalSince1970: 0),
-                outcome: .init(
-                    response: response,
-                    responseBody: Data(#"{"ok":true}"#.utf8),
-                    completedAt: Date(timeIntervalSince1970: 1)
-                )
+        var request = URLRequest(url: URL(string: "https://example.com/orders?token=secret")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer top-secret", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(#"{"password":"abc123"}"#.utf8)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        await recorder.record(
+            request: request,
+            startedAt: Date(timeIntervalSince1970: 0),
+            outcome: .init(
+                response: response,
+                responseBody: Data(#"{"ok":true}"#.utf8),
+                completedAt: Date(timeIntervalSince1970: 1)
             )
-            semaphore.signal()
-        }
-        semaphore.wait()
+        )
         return recorder
     }
 
@@ -961,6 +1000,12 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             | (UInt32(data[offset + 1]) << 8)
             | (UInt32(data[offset + 2]) << 16)
             | (UInt32(data[offset + 3]) << 24)
+    }
+}
+
+private struct ThrowingPackager: DiagnosticsBundlePackager {
+    func package(at _: URL, filename _: String) throws -> URL {
+        throw NSError(domain: "DiagnosticsBundlePackagerTest", code: 1)
     }
 }
 
