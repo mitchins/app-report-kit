@@ -235,6 +235,8 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertEqual(email.subject, "JustCards Report")
         XCTAssertTrue(email.body.contains("Export failed"))
         XCTAssertTrue(email.body.contains("App version/build"))
+        XCTAssertFalse(email.body.contains("User email"))
+        XCTAssertFalse(email.body.contains("Not provided"))
         XCTAssertTrue(email.attachments.contains { $0.fileURL.lastPathComponent == "report.json" })
         XCTAssertTrue(email.attachments.contains { $0.fileURL.lastPathComponent == "metadata.json" })
         XCTAssertTrue(email.attachments.contains { $0.fileURL.lastPathComponent == "network.har" })
@@ -268,13 +270,16 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertEqual(share.itemURLs.first?.pathExtension, "zip")
     }
 
-    func testDiagnosticsSubmitterDefaultsToStandardPolicy() async {
+    func testDiagnosticsSubmitterDefaultsToEmailSubmissionPolicyForEmailDelivery() async {
         let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
             mailAvailability: true,
             platform: .iOS
         )
-        XCTAssertEqual(submitter.feedbackFormPolicy, .standard)
+        let expectedPolicy = FeedbackFormPolicy(
+            .init(emailOptions: .init(allowsEmail: false, requiresEmail: false))
+        )
+        XCTAssertEqual(submitter.feedbackFormPolicy, expectedPolicy)
     }
 
     func testPendingDeliveryBundleRedactsCamelCaseDiagnosticsKeys() async throws {
