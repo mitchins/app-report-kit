@@ -9,6 +9,28 @@ public enum FeedbackSubmissionRoute: String, Codable, Sendable {
 }
 
 public struct FeedbackSubmissionRequest: Equatable, Sendable {
+    public struct Details: Equatable, Sendable {
+        public let kind: FeedbackReportKind
+        public let notes: String
+        public let severity: FeedbackSeverity
+        public let email: String?
+        public let screen: String?
+
+        public init(
+            kind: FeedbackReportKind,
+            notes: String,
+            severity: FeedbackSeverity = .normal,
+            email: String? = nil,
+            screen: String? = nil
+        ) {
+            self.kind = kind
+            self.notes = notes
+            self.severity = severity
+            self.email = email
+            self.screen = screen
+        }
+    }
+
     public struct Options: Equatable, Sendable {
         public let includeTechnicalDetails: Bool
         public let includeScreenshot: Bool
@@ -46,21 +68,27 @@ public struct FeedbackSubmissionRequest: Equatable, Sendable {
     public let attachments: [FeedbackAttachment]
     public let screenshotAttachments: [FeedbackAttachment]
 
+    public var details: Details {
+        Details(
+            kind: kind,
+            notes: notes,
+            severity: severity,
+            email: email,
+            screen: screen
+        )
+    }
+
     public init(
-        kind: FeedbackReportKind,
-        notes: String,
-        severity: FeedbackSeverity = .normal,
-        email: String? = nil,
-        screen: String? = nil,
+        details: Details,
         options: Options = .init(),
         payload: Payload = .init(),
         screenshotAttachments: [FeedbackAttachment] = []
     ) {
-        self.kind = kind
-        self.notes = notes
-        self.severity = severity
-        self.email = email
-        self.screen = screen
+        kind = details.kind
+        notes = details.notes
+        severity = details.severity
+        email = details.email
+        screen = details.screen
         includeTechnicalDetails = options.includeTechnicalDetails
         includeScreenshot = options.includeScreenshot
         diagnostics = payload.diagnostics
@@ -168,6 +196,107 @@ public struct FeedbackFormSupportOptions: Equatable, Sendable {
 }
 
 public struct FeedbackFormPolicy: Equatable, Sendable {
+    public struct KindOptions: Equatable, Sendable {
+        public let allowedKinds: [FeedbackReportKind]
+        public let defaultKind: FeedbackReportKind
+        public let showsKindPicker: Bool
+
+        public init(
+            allowedKinds: [FeedbackReportKind] = FeedbackReportKind.allCases,
+            defaultKind: FeedbackReportKind = .bug,
+            showsKindPicker: Bool = true
+        ) {
+            self.allowedKinds = allowedKinds
+            self.defaultKind = defaultKind
+            self.showsKindPicker = showsKindPicker
+        }
+    }
+
+    public struct SeverityOptions: Equatable, Sendable {
+        public let showsSeverityPicker: Bool
+        public let defaultSeverity: FeedbackSeverity
+
+        public init(
+            showsSeverityPicker: Bool = true,
+            defaultSeverity: FeedbackSeverity = .normal
+        ) {
+            self.showsSeverityPicker = showsSeverityPicker
+            self.defaultSeverity = defaultSeverity
+        }
+    }
+
+    public struct EmailOptions: Equatable, Sendable {
+        public let allowsEmail: Bool
+        public let requiresEmail: Bool
+
+        public init(
+            allowsEmail: Bool = true,
+            requiresEmail: Bool = false
+        ) {
+            self.allowsEmail = allowsEmail
+            self.requiresEmail = requiresEmail
+        }
+    }
+
+    public struct TechnicalDetailsOptions: Equatable, Sendable {
+        public let allowsTechnicalDetails: Bool
+        public let technicalDetailsDefaultOn: Bool
+
+        public init(
+            allowsTechnicalDetails: Bool = false,
+            technicalDetailsDefaultOn: Bool = false
+        ) {
+            self.allowsTechnicalDetails = allowsTechnicalDetails
+            self.technicalDetailsDefaultOn = technicalDetailsDefaultOn
+        }
+    }
+
+    public struct ScreenshotOptions: Equatable, Sendable {
+        public let allowsScreenshot: Bool
+        public let screenshotDefaultOn: Bool
+
+        public init(
+            allowsScreenshot: Bool = false,
+            screenshotDefaultOn: Bool = false
+        ) {
+            self.allowsScreenshot = allowsScreenshot
+            self.screenshotDefaultOn = screenshotDefaultOn
+        }
+    }
+
+    public struct NotesOptions: Equatable, Sendable {
+        public let requiresNotes: Bool
+
+        public init(requiresNotes: Bool = true) {
+            self.requiresNotes = requiresNotes
+        }
+    }
+
+    public struct Configuration: Equatable, Sendable {
+        public let kindOptions: KindOptions
+        public let severityOptions: SeverityOptions
+        public let emailOptions: EmailOptions
+        public let technicalDetailsOptions: TechnicalDetailsOptions
+        public let screenshotOptions: ScreenshotOptions
+        public let notesOptions: NotesOptions
+
+        public init(
+            kindOptions: KindOptions = .init(),
+            severityOptions: SeverityOptions = .init(),
+            emailOptions: EmailOptions = .init(),
+            technicalDetailsOptions: TechnicalDetailsOptions = .init(),
+            screenshotOptions: ScreenshotOptions = .init(),
+            notesOptions: NotesOptions = .init()
+        ) {
+            self.kindOptions = kindOptions
+            self.severityOptions = severityOptions
+            self.emailOptions = emailOptions
+            self.technicalDetailsOptions = technicalDetailsOptions
+            self.screenshotOptions = screenshotOptions
+            self.notesOptions = notesOptions
+        }
+    }
+
     public let allowedKinds: [FeedbackReportKind]
     public let defaultKind: FeedbackReportKind
     public let showsKindPicker: Bool
@@ -181,85 +310,68 @@ public struct FeedbackFormPolicy: Equatable, Sendable {
     public let screenshotDefaultOn: Bool
     public let requiresNotes: Bool
 
-    public init(
-        allowedKinds: [FeedbackReportKind] = FeedbackReportKind.allCases,
-        defaultKind: FeedbackReportKind = .bug,
-        showsKindPicker: Bool = true,
-        showsSeverityPicker: Bool = true,
-        defaultSeverity: FeedbackSeverity = .normal,
-        allowsEmail: Bool = true,
-        requiresEmail: Bool = false,
-        allowsTechnicalDetails: Bool = false,
-        technicalDetailsDefaultOn: Bool = false,
-        allowsScreenshot: Bool = false,
-        screenshotDefaultOn: Bool = false,
-        requiresNotes: Bool = true
-    ) {
+    public init(_ configuration: Configuration = .init()) {
         var distinctKinds: [FeedbackReportKind] = []
-        for kind in allowedKinds.isEmpty ? FeedbackReportKind.allCases : allowedKinds {
+        for kind in configuration.kindOptions.allowedKinds.isEmpty ? FeedbackReportKind.allCases : configuration.kindOptions.allowedKinds {
             if !distinctKinds.contains(kind) {
                 distinctKinds.append(kind)
             }
         }
 
-        let safeRequiresEmail = requiresEmail && allowsEmail
-        let normalizedDefaultKind = distinctKinds.contains(defaultKind) ? defaultKind : distinctKinds[0]
+        let safeRequiresEmail = configuration.emailOptions.requiresEmail && configuration.emailOptions.allowsEmail
+        let normalizedDefaultKind = distinctKinds.contains(configuration.kindOptions.defaultKind) ? configuration.kindOptions.defaultKind : distinctKinds[0]
 
-        self.allowedKinds = distinctKinds
-        self.defaultKind = normalizedDefaultKind
-        self.showsKindPicker = showsKindPicker
-        self.showsSeverityPicker = showsSeverityPicker
-        self.defaultSeverity = defaultSeverity
-        self.allowsEmail = allowsEmail
+        allowedKinds = distinctKinds
+        defaultKind = normalizedDefaultKind
+        showsKindPicker = configuration.kindOptions.showsKindPicker
+        showsSeverityPicker = configuration.severityOptions.showsSeverityPicker
+        defaultSeverity = configuration.severityOptions.defaultSeverity
+        allowsEmail = configuration.emailOptions.allowsEmail
         self.requiresEmail = safeRequiresEmail
-        self.allowsTechnicalDetails = allowsTechnicalDetails
-        self.technicalDetailsDefaultOn = technicalDetailsDefaultOn
-        self.allowsScreenshot = allowsScreenshot
-        self.screenshotDefaultOn = screenshotDefaultOn
-        self.requiresNotes = requiresNotes
+        allowsTechnicalDetails = configuration.technicalDetailsOptions.allowsTechnicalDetails
+        technicalDetailsDefaultOn = configuration.technicalDetailsOptions.technicalDetailsDefaultOn
+        allowsScreenshot = configuration.screenshotOptions.allowsScreenshot
+        screenshotDefaultOn = configuration.screenshotOptions.screenshotDefaultOn
+        requiresNotes = configuration.notesOptions.requiresNotes
     }
 
     public static let standard = FeedbackFormPolicy()
 
     public static let simpleIssue = FeedbackFormPolicy(
-        allowedKinds: [.bug],
-        defaultKind: .bug,
-        showsKindPicker: false,
-        showsSeverityPicker: false,
-        allowsEmail: true,
-        requiresEmail: false,
-        technicalDetailsDefaultOn: false,
-        screenshotDefaultOn: false
+        .init(
+            kindOptions: .init(allowedKinds: [.bug], defaultKind: .bug, showsKindPicker: false),
+            severityOptions: .init(showsSeverityPicker: false),
+            emailOptions: .init(allowsEmail: true, requiresEmail: false),
+            technicalDetailsOptions: .init(technicalDetailsDefaultOn: false),
+            screenshotOptions: .init(screenshotDefaultOn: false)
+        )
     )
 
     public static let bugOnly = FeedbackFormPolicy(
-        allowedKinds: [.bug],
-        defaultKind: .bug,
-        showsKindPicker: false,
-        showsSeverityPicker: false,
-        allowsTechnicalDetails: true,
-        technicalDetailsDefaultOn: true
+        .init(
+            kindOptions: .init(allowedKinds: [.bug], defaultKind: .bug, showsKindPicker: false),
+            severityOptions: .init(showsSeverityPicker: false),
+            technicalDetailsOptions: .init(allowsTechnicalDetails: true, technicalDetailsDefaultOn: true)
+        )
     )
 
     public static let feedbackOnly = FeedbackFormPolicy(
-        allowedKinds: [.feedback],
-        defaultKind: .feedback,
-        showsKindPicker: false,
-        showsSeverityPicker: false,
-        allowsEmail: false,
-        allowsTechnicalDetails: false,
-        allowsScreenshot: false
+        .init(
+            kindOptions: .init(allowedKinds: [.feedback], defaultKind: .feedback, showsKindPicker: false),
+            severityOptions: .init(showsSeverityPicker: false),
+            emailOptions: .init(allowsEmail: false),
+            technicalDetailsOptions: .init(allowsTechnicalDetails: false),
+            screenshotOptions: .init(allowsScreenshot: false)
+        )
     )
 
     public static let clientDebug = FeedbackFormPolicy(
-        allowedKinds: [.bug],
-        defaultKind: .bug,
-        showsKindPicker: false,
-        showsSeverityPicker: true,
-        allowsTechnicalDetails: true,
-        technicalDetailsDefaultOn: true,
-        allowsScreenshot: true,
-        screenshotDefaultOn: true
+        .init(
+            kindOptions: .init(allowedKinds: [.bug], defaultKind: .bug, showsKindPicker: false),
+            severityOptions: .init(showsSeverityPicker: true),
+            technicalDetailsOptions: .init(allowsTechnicalDetails: true, technicalDetailsDefaultOn: true),
+            screenshotOptions: .init(allowsScreenshot: true, screenshotDefaultOn: true)
+        )
     )
 
     public var showsKindPickerWhenNeeded: Bool {
@@ -271,18 +383,30 @@ public struct FeedbackFormPolicy: Equatable, Sendable {
         showsSeverityPicker: Bool? = nil
     ) -> FeedbackFormPolicy {
         FeedbackFormPolicy(
-            allowedKinds: allowedKinds,
-            defaultKind: defaultKind,
-            showsKindPicker: showsKindPicker ?? self.showsKindPicker,
-            showsSeverityPicker: showsSeverityPicker ?? self.showsSeverityPicker,
-            defaultSeverity: defaultSeverity,
-            allowsEmail: allowsEmail,
-            requiresEmail: requiresEmail,
-            allowsTechnicalDetails: allowsTechnicalDetails,
-            technicalDetailsDefaultOn: technicalDetailsDefaultOn,
-            allowsScreenshot: allowsScreenshot,
-            screenshotDefaultOn: screenshotDefaultOn,
-            requiresNotes: requiresNotes
+            .init(
+                kindOptions: .init(
+                    allowedKinds: allowedKinds,
+                    defaultKind: defaultKind,
+                    showsKindPicker: showsKindPicker ?? self.showsKindPicker
+                ),
+                severityOptions: .init(
+                    showsSeverityPicker: showsSeverityPicker ?? self.showsSeverityPicker,
+                    defaultSeverity: defaultSeverity
+                ),
+                emailOptions: .init(
+                    allowsEmail: allowsEmail,
+                    requiresEmail: requiresEmail
+                ),
+                technicalDetailsOptions: .init(
+                    allowsTechnicalDetails: allowsTechnicalDetails,
+                    technicalDetailsDefaultOn: technicalDetailsDefaultOn
+                ),
+                screenshotOptions: .init(
+                    allowsScreenshot: allowsScreenshot,
+                    screenshotDefaultOn: screenshotDefaultOn
+                ),
+                notesOptions: .init(requiresNotes: requiresNotes)
+            )
         )
     }
 }

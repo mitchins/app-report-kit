@@ -144,11 +144,13 @@ final class FeedbackFormViewModel: ObservableObject {
         do {
             let shouldIncludeScreenshot = hasScreenshotsForSubmission && shouldShowScreenshotToggle && includeScreenshot
             let request = FeedbackSubmissionRequest(
-                kind: kind,
-                notes: notes,
-                severity: severity,
-                email: normalizedEmail,
-                screen: screenContext,
+                details: .init(
+                    kind: kind,
+                    notes: notes,
+                    severity: severity,
+                    email: normalizedEmail,
+                    screen: screenContext
+                ),
                 options: .init(
                     includeTechnicalDetails: shouldShowTechnicalDetailsToggle && includeTechnicalDetails,
                     includeScreenshot: shouldIncludeScreenshot

@@ -151,17 +151,14 @@ FeedbackForm(submitter: submitter, policy: .clientDebug)
 
 // custom policy (explicit)
 let pilotPolicy = FeedbackFormPolicy(
-    allowedKinds: [.bug],
-    defaultKind: .bug,
-    showsKindPicker: false,
-    showsSeverityPicker: false,
-    allowsEmail: true,
-    requiresEmail: false,
-    allowsTechnicalDetails: true,
-    technicalDetailsDefaultOn: true,
-    allowsScreenshot: true,
-    screenshotDefaultOn: false,
-    requiresNotes: true
+    .init(
+        kindOptions: .init(allowedKinds: [.bug], defaultKind: .bug, showsKindPicker: false),
+        severityOptions: .init(showsSeverityPicker: false),
+        emailOptions: .init(allowsEmail: true, requiresEmail: false),
+        technicalDetailsOptions: .init(allowsTechnicalDetails: true, technicalDetailsDefaultOn: true),
+        screenshotOptions: .init(allowsScreenshot: true, screenshotDefaultOn: false),
+        notesOptions: .init(requiresNotes: true)
+    )
 )
 
 FeedbackForm(

@@ -112,8 +112,10 @@ final class SupportTests: XCTestCase {
         )
 
         let report = builder.makeReport(
-            kind: .feedback,
-            notes: "Looks good",
+            details: .init(
+                kind: .feedback,
+                notes: "Looks good"
+            ),
             diagnostics: ["context": "preview"]
         )
 

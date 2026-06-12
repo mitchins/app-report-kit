@@ -52,11 +52,13 @@ public final class AppReportClient: @unchecked Sendable {
         attachments: [FeedbackAttachment] = []
     ) async throws -> AppReportSubmissionResponse {
         let report = reportBuilder.makeReport(
-            kind: kind,
-            notes: notes,
-            severity: severity,
-            email: email,
-            screen: screen,
+            details: .init(
+                kind: kind,
+                notes: notes,
+                severity: severity,
+                email: email,
+                screen: screen
+            ),
             diagnostics: diagnosticsProvider?.makeDiagnostics() ?? [:],
             attachments: attachments
         )
@@ -113,11 +115,7 @@ extension AppReportClient: FeedbackSubmitting {
         }
 
         let report = reportBuilder.makeReport(
-            kind: request.kind,
-            notes: request.notes,
-            severity: request.severity,
-            email: request.email,
-            screen: request.screen,
+            details: request.details,
             diagnostics: diagnostics,
             attachments: request.attachments + request.screenshotAttachments
         )

@@ -193,8 +193,12 @@ final class FeedbackFormModelTests: XCTestCase {
         let model = makeModel(
             submitter: submitter,
             policy: FeedbackFormPolicy(
-                allowsEmail: true,
-                requiresEmail: true
+                .init(
+                    emailOptions: .init(
+                        allowsEmail: true,
+                        requiresEmail: true
+                    )
+                )
             )
         )
 

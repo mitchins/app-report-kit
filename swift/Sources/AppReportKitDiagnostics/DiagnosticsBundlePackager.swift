@@ -31,7 +31,7 @@ public struct ZipDiagnosticsBundlePackager: DiagnosticsBundlePackager {
         }
 
         var files: [PackagedFile] = []
-        let rootPath = standardizedRootURL.path.hasSuffix("/") ? standardizedRootURL.path : "\(standardizedRootURL.path)/"
+        let rootComponents = standardizedRootURL.pathComponents
         for case let fileURL as URL in enumerator {
             let standardizedFileURL = fileURL.standardizedFileURL
             guard
@@ -42,10 +42,10 @@ public struct ZipDiagnosticsBundlePackager: DiagnosticsBundlePackager {
                 continue
             }
 
-            let fullFilePath = standardizedFileURL.path
-            let relativePath = fullFilePath.hasPrefix(rootPath)
-                ? String(fullFilePath.dropFirst(rootPath.count))
-                : standardizedFileURL.lastPathComponent
+            let relativeComponents = Array(standardizedFileURL.pathComponents.dropFirst(rootComponents.count))
+            let relativePath = relativeComponents.isEmpty
+                ? standardizedFileURL.lastPathComponent
+                : NSString.path(withComponents: relativeComponents)
             files.append(.init(fileURL: standardizedFileURL, relativePath: relativePath))
         }
 

@@ -173,6 +173,21 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
     private let dateProvider: () -> Date
     private let diagnosticsRedactor: NetworkRedactor
 
+    private struct PreparedSubmission {
+        let request: FeedbackSubmissionRequest
+        let diagnostics: [String: String]
+        let userAttachments: [FeedbackAttachment]
+        let inlineScreenshotAttachments: [FeedbackAttachment]
+        let networkEvents: [NetworkEvent]
+        let screenshots: [DiagnosticsAttachment]
+        let breadcrumbs: [FeedbackBreadcrumb]
+        let submittedAt: Date
+
+        var emailAttachments: [FeedbackAttachment] {
+            userAttachments + inlineScreenshotAttachments
+        }
+    }
+
     public init(
         reportBuilder: FeedbackReportBuilder,
         delivery: AppReportDelivery,
@@ -230,48 +245,30 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             networkEvents: networkEvents
         )
         let inlineScreenshotAttachments = makeInlineScreenshotAttachments(from: screenshots)
-        let baseAttachments = request.attachments + inlineScreenshotAttachments
+        let prepared = PreparedSubmission(
+            request: request,
+            diagnostics: diagnostics,
+            userAttachments: request.attachments,
+            inlineScreenshotAttachments: inlineScreenshotAttachments,
+            networkEvents: networkEvents,
+            screenshots: screenshots,
+            breadcrumbs: breadcrumbs,
+            submittedAt: submittedAt
+        )
 
         switch delivery {
         case let .endpoint(client):
-            let report = try maybeAttachBundleToEndpoint(
-                request: request,
-                diagnostics: diagnostics,
-                attachments: request.attachments,
-                inlineScreenshotAttachments: inlineScreenshotAttachments,
-                networkEvents: networkEvents,
-                screenshots: screenshots,
-                breadcrumbs: breadcrumbs,
-                submittedAt: submittedAt
-            )
+            let report = try maybeAttachBundleToEndpoint(prepared: prepared)
 
             let response = try await client.submit(report)
             return .submitted(response)
 
         case let .email(emailConfiguration):
-            return try await makePendingDelivery(
-                request: request,
-                diagnostics: diagnostics,
-                attachments: baseAttachments,
-                networkEvents: networkEvents,
-                screenshots: screenshots,
-                breadcrumbs: breadcrumbs,
-                submittedAt: submittedAt,
-                emailConfiguration: emailConfiguration
-            )
+            return try await makePendingDelivery(prepared: prepared, emailConfiguration: emailConfiguration)
 
         case let .endpointWithEmailFallback(client, emailConfiguration, fallbackPolicy):
             do {
-                let report = try maybeAttachBundleToEndpoint(
-                    request: request,
-                    diagnostics: diagnostics,
-                    attachments: request.attachments,
-                    inlineScreenshotAttachments: inlineScreenshotAttachments,
-                    networkEvents: networkEvents,
-                    screenshots: screenshots,
-                    breadcrumbs: breadcrumbs,
-                    submittedAt: submittedAt
-                )
+                let report = try maybeAttachBundleToEndpoint(prepared: prepared)
 
                 let response = try await client.submit(report)
                 return .submitted(response)
@@ -280,16 +277,7 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
                     throw error
                 }
 
-                return try await makePendingDelivery(
-                    request: request,
-                    diagnostics: diagnostics,
-                    attachments: baseAttachments,
-                    networkEvents: networkEvents,
-                    screenshots: screenshots,
-                    breadcrumbs: breadcrumbs,
-                    submittedAt: submittedAt,
-                    emailConfiguration: emailConfiguration
-                )
+                return try await makePendingDelivery(prepared: prepared, emailConfiguration: emailConfiguration)
             }
         }
     }
@@ -374,29 +362,16 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         }
     }
 
-    private func maybeAttachBundleToEndpoint(
-        request: FeedbackSubmissionRequest,
-        diagnostics: [String: String],
-        attachments: [FeedbackAttachment],
-        inlineScreenshotAttachments: [FeedbackAttachment],
-        networkEvents: [NetworkEvent],
-        screenshots: [DiagnosticsAttachment],
-        breadcrumbs: [FeedbackBreadcrumb],
-        submittedAt: Date
-    ) throws -> FeedbackReport {
-        let includesBundleAttachments = attachBundleToEndpoint && request.includeTechnicalDetails
+    private func maybeAttachBundleToEndpoint(prepared: PreparedSubmission) throws -> FeedbackReport {
+        let includesBundleAttachments = attachBundleToEndpoint && prepared.request.includeTechnicalDetails
         let reportAttachments = includesBundleAttachments
-            ? attachments
-            : attachments + inlineScreenshotAttachments
+            ? prepared.userAttachments
+            : prepared.emailAttachments
         let report = reportBuilder.makeReport(
-            kind: request.kind,
-            notes: request.notes,
-            severity: request.severity,
-            email: request.email,
-            screen: request.screen,
-            diagnostics: diagnostics,
+            details: prepared.request.details,
+            diagnostics: prepared.diagnostics,
             attachments: reportAttachments,
-            breadcrumbs: breadcrumbs
+            breadcrumbs: prepared.breadcrumbs
         )
 
         guard includesBundleAttachments else {
@@ -405,9 +380,9 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
 
         let bundle = try bundleBuilder.build(
             report: report,
-            submittedAt: submittedAt,
-            networkEvents: networkEvents,
-            screenshots: screenshots
+            submittedAt: prepared.submittedAt,
+            networkEvents: prepared.networkEvents,
+            screenshots: prepared.screenshots
         )
         defer {
             try? bundleBuilder.cleanup(bundle)
@@ -415,42 +390,28 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         let bundleAttachments = try bundleBuilder.makeEndpointAttachments(from: bundle)
 
         return reportBuilder.makeReport(
-            kind: request.kind,
-            notes: request.notes,
-            severity: request.severity,
-            email: request.email,
-            screen: request.screen,
-            diagnostics: diagnostics,
-            attachments: attachments + bundleAttachments,
-            breadcrumbs: breadcrumbs
+            details: prepared.request.details,
+            diagnostics: prepared.diagnostics,
+            attachments: prepared.userAttachments + bundleAttachments,
+            breadcrumbs: prepared.breadcrumbs
         )
     }
 
     private func makePendingDelivery(
-        request: FeedbackSubmissionRequest,
-        diagnostics: [String: String],
-        attachments: [FeedbackAttachment],
-        networkEvents: [NetworkEvent],
-        screenshots: [DiagnosticsAttachment],
-        breadcrumbs: [FeedbackBreadcrumb],
-        submittedAt: Date,
+        prepared: PreparedSubmission,
         emailConfiguration: AppReportEmailConfiguration
     ) async throws -> FeedbackSubmissionOutcome {
         let report = reportBuilder.makeReport(
-            kind: request.kind,
-            notes: request.notes,
-            severity: request.severity,
-            email: request.email,
-            screen: request.screen,
-            diagnostics: diagnostics,
-            attachments: attachments,
-            breadcrumbs: breadcrumbs
+            details: prepared.request.details,
+            diagnostics: prepared.diagnostics,
+            attachments: prepared.emailAttachments,
+            breadcrumbs: prepared.breadcrumbs
         )
         let bundle = try bundleBuilder.build(
             report: report,
-            submittedAt: submittedAt,
-            networkEvents: networkEvents,
-            screenshots: screenshots
+            submittedAt: prepared.submittedAt,
+            networkEvents: prepared.networkEvents,
+            screenshots: prepared.screenshots
         )
         let subject = emailConfiguration.subjectProvider(report)
         let body = emailConfiguration.bodyProvider(report, !bundle.fileAttachments.isEmpty)
@@ -471,7 +432,7 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
 
         let packageURL = try bundlePackager.package(
             at: bundle.rootURL,
-            filename: bundlePackageFilename(for: submittedAt)
+            filename: bundlePackageFilename(for: prepared.submittedAt)
         )
         return .needsUserAction(
             .share(

@@ -82,12 +82,11 @@ You can also provide your own `FeedbackFormPolicy` values:
 
 ```swift
 let simpleOnlyBugPolicy = FeedbackFormPolicy(
-    allowedKinds: [.bug],
-    defaultKind: .bug,
-    showsSeverityPicker: false,
-    allowsScreenshot: true,
-    screenshotDefaultOn: false,
-    showsKindPicker: false
+    .init(
+        kindOptions: .init(allowedKinds: [.bug], defaultKind: .bug, showsKindPicker: false),
+        severityOptions: .init(showsSeverityPicker: false),
+        screenshotOptions: .init(allowsScreenshot: true, screenshotDefaultOn: false)
+    )
 )
 ```
 
@@ -99,8 +98,7 @@ Use `simpleIssue` for a short form where users only report one kind:
 FeedbackForm(
     submitter: submitter,
     policy: .simpleIssue,
-    copy: .issue,
-    showsSeverityPicker: false
+    copy: .issue
 )
 ```
 

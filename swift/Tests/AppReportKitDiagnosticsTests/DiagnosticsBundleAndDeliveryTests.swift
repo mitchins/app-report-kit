@@ -219,8 +219,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -248,8 +250,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -282,8 +286,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 payload: .init(diagnostics: [
                     "accessToken": "top-secret",
                     "lastAction": "Tapped Export"
@@ -314,8 +320,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -352,8 +360,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 payload: .init(diagnostics: ["authToken": "top-secret", "safeKey": "value"])
             )
         )
@@ -381,8 +391,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -417,7 +429,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         )
 
         let outcome = try await submitter.submit(
-            FeedbackSubmissionRequest(kind: .bug, notes: "Export failed")
+            FeedbackSubmissionRequest(details: .init(kind: .bug, notes: "Export failed"))
         )
 
         guard case .needsUserAction(.share) = outcome else {
@@ -477,8 +489,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         do {
             _ = try await submitter.submit(
                 FeedbackSubmissionRequest(
-                    kind: .bug,
-                    notes: "Still broken",
+                    details: .init(
+                        kind: .bug,
+                        notes: "Still broken"
+                    ),
                     options: .init(includeTechnicalDetails: true)
                 )
             )
@@ -509,8 +523,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Still broken",
+                details: .init(
+                    kind: .bug,
+                    notes: "Still broken"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -541,8 +557,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Broken export",
+                details: .init(
+                    kind: .bug,
+                    notes: "Broken export"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -584,8 +602,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Broken export",
+                details: .init(
+                    kind: .bug,
+                    notes: "Broken export"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -618,8 +638,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         _ = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Broken export",
+                details: .init(
+                    kind: .bug,
+                    notes: "Broken export"
+                ),
                 options: .init(includeTechnicalDetails: true, includeScreenshot: true)
             )
         )
@@ -642,8 +664,10 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         let outcome = try await submitter.submit(
             FeedbackSubmissionRequest(
-                kind: .bug,
-                notes: "Export failed",
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
                 options: .init(includeTechnicalDetails: true)
             )
         )
@@ -724,10 +748,12 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         breadcrumbs: [FeedbackBreadcrumb] = []
     ) -> FeedbackReport {
         makeReportBuilder().makeReport(
-            kind: .bug,
-            notes: "Broken export",
-            severity: .high,
-            email: "user@example.com",
+            details: .init(
+                kind: .bug,
+                notes: "Broken export",
+                severity: .high,
+                email: "user@example.com"
+            ),
             diagnostics: [
                 "networkEventCount": "1",
                 "lastAction": "Tapped Export"
