@@ -69,7 +69,12 @@ public struct FeedbackForm: View {
         let resolvedPolicy = policy
             ?? (submitter as? any FeedbackFormPolicyProviding)?.feedbackFormPolicy
             ?? .standard
-        let policyWithSeverity = resolvedPolicy.with(showsSeverityPicker: showsSeverityPicker)
+        let routeAwarePolicy = (submitter as? any FeedbackSubmissionRouteProviding)?.feedbackSubmissionRoute == .email
+            ? resolvedPolicy.with(
+                emailOptions: .init(allowsEmail: false, requiresEmail: false)
+            )
+            : resolvedPolicy
+        let policyWithSeverity = routeAwarePolicy.with(showsSeverityPicker: showsSeverityPicker)
 
         self.init(
             model: FeedbackFormViewModel(

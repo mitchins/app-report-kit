@@ -380,7 +380,8 @@ public struct FeedbackFormPolicy: Equatable, Sendable {
 
     public func with(
         showsKindPicker: Bool? = nil,
-        showsSeverityPicker: Bool? = nil
+        showsSeverityPicker: Bool? = nil,
+        emailOptions: EmailOptions? = nil
     ) -> FeedbackFormPolicy {
         FeedbackFormPolicy(
             .init(
@@ -394,8 +395,8 @@ public struct FeedbackFormPolicy: Equatable, Sendable {
                     defaultSeverity: defaultSeverity
                 ),
                 emailOptions: .init(
-                    allowsEmail: allowsEmail,
-                    requiresEmail: requiresEmail
+                    allowsEmail: emailOptions?.allowsEmail ?? allowsEmail,
+                    requiresEmail: emailOptions?.requiresEmail ?? requiresEmail
                 ),
                 technicalDetailsOptions: .init(
                     allowsTechnicalDetails: allowsTechnicalDetails,

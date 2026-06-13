@@ -79,7 +79,7 @@ final class FeedbackFormViewModel: ObservableObject {
             return false
         }
 
-        if policy.requiresEmail && trimmedEmail.isEmpty {
+        if submissionRoute != .email, policy.requiresEmail && trimmedEmail.isEmpty {
             return false
         }
 
@@ -107,7 +107,7 @@ final class FeedbackFormViewModel: ObservableObject {
     }
 
     var showsEmailField: Bool {
-        policy.allowsEmail || policy.requiresEmail
+        submissionRoute != .email && (policy.allowsEmail || policy.requiresEmail)
     }
 
     var kindOptions: [FeedbackReportKind] {

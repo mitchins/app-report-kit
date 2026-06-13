@@ -83,6 +83,79 @@ final class FeedbackFormModelTests: XCTestCase {
         XCTAssertEqual(unavailableModel.submitButtonTitle, FeedbackFormCopy.standard.unavailableSubmitButtonDisabledTitle)
     }
 
+    func testEmailFieldHiddenForEmailRouteEvenWhenPolicyAllowsEmail() {
+        let submitter = MockFeedbackSubmitter(route: .email)
+        let model = makeModel(
+            submitter: submitter,
+            policy: FeedbackFormPolicy(
+                .init(
+                    emailOptions: .init(
+                        allowsEmail: true,
+                        requiresEmail: false
+                    )
+                )
+            )
+        )
+
+        XCTAssertFalse(model.showsEmailField)
+    }
+
+    func testEmailFieldVisibleWhenNotEmailRouteAndPolicyAllowsEmail() {
+        let submitter = MockFeedbackSubmitter(route: .endpoint)
+        let model = makeModel(
+            submitter: submitter,
+            policy: FeedbackFormPolicy(
+                .init(
+                    emailOptions: .init(
+                        allowsEmail: true,
+                        requiresEmail: false
+                    )
+                )
+            )
+        )
+
+        XCTAssertTrue(model.showsEmailField)
+    }
+
+    func testEmailRouteCanSubmitWithoutEmailWhenPolicyRequiresEmail() async throws {
+        let submitter = MockFeedbackSubmitter(route: .email)
+        let model = makeModel(
+            submitter: submitter,
+            policy: FeedbackFormPolicy(
+                .init(
+                    emailOptions: .init(
+                        allowsEmail: true,
+                        requiresEmail: true
+                    )
+                )
+            )
+        )
+
+        model.notes = "Could not export report."
+
+        await model.submit()
+
+        XCTAssertEqual(submitter.requests.count, 1)
+        XCTAssertNil(submitter.requests.last?.email)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testEmailRouteUsesRouteAwarePolicyInFormInit() {
+        let form = FeedbackForm(
+            submitter: MockFeedbackSubmitter(route: .email),
+            policy: FeedbackFormPolicy(
+                .init(
+                    emailOptions: .init(
+                        allowsEmail: true,
+                        requiresEmail: false
+                    )
+                )
+            )
+        )
+
+        _ = form.body
+    }
+
     func testScreenshotPreviewStateControlsSubmissionPayload() async throws {
         let submitter = MockFeedbackSubmitter(
             supportOptions: .init(
