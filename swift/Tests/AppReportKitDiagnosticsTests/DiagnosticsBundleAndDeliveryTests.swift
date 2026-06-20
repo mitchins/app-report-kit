@@ -270,6 +270,56 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertEqual(share.itemURLs.first?.pathExtension, "zip")
     }
 
+    func testCustomDeliveryReceivesPreparedSubmissionWithBundleAndAttachments() async throws {
+        let handler = RecordingSubmissionHandler()
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(handler),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(platform: .iOS)
+        )
+
+        _ = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed",
+                    severity: .high,
+                    email: "user@example.com",
+                    screen: "InvoiceEditor"
+                ),
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true),
+                payload: .init(
+                    attachments: [
+                        FeedbackAttachment(
+                            filename: "log.txt",
+                            contentType: "text/plain",
+                            data: Data("log".utf8)
+                        )
+                    ]
+                )
+            )
+        )
+
+        let submission = try XCTUnwrap(handler.submissions.first)
+        XCTAssertEqual(submission.report.type, "bug")
+        XCTAssertEqual(submission.report.context, "InvoiceEditor")
+        XCTAssertEqual(submission.report.title, "Bug")
+        XCTAssertEqual(submission.report.notes, "Export failed")
+        XCTAssertEqual(submission.report.reporterEmail, "user@example.com")
+        XCTAssertEqual(submission.report.severity, "high")
+        XCTAssertEqual(submission.attachments.map(\.kind), [.attachment, .screenshot])
+        XCTAssertEqual(submission.attachments.map(\.fileName), ["log.txt", "screenshot-1.png"])
+        XCTAssertTrue(submission.attachments.contains { $0.fileName == "screenshot-1.png" })
+        XCTAssertNotNil(submission.diagnosticsBundle)
+        XCTAssertTrue(submission.diagnosticsBundle?.fileName.hasSuffix(".zip") == true)
+        XCTAssertEqual(submission.diagnosticsBundle?.mimeType, "application/zip")
+    }
+
     func testDiagnosticsSubmitterDefaultsToEmailSubmissionPolicyForEmailDelivery() async {
         let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
@@ -1011,6 +1061,14 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 private struct ThrowingPackager: DiagnosticsBundlePackager {
     func package(at _: URL, filename _: String) throws -> URL {
         throw NSError(domain: "DiagnosticsBundlePackagerTest", code: 1)
+    }
+}
+
+private final class RecordingSubmissionHandler: AppReportSubmissionHandling, @unchecked Sendable {
+    var submissions: [PreparedAppReportSubmission] = []
+
+    func submit(_ submission: PreparedAppReportSubmission) async throws {
+        submissions.append(submission)
     }
 }
 

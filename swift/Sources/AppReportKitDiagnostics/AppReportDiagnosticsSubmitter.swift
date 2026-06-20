@@ -74,6 +74,7 @@ public enum AppReportDelivery: Sendable {
         AppReportEmailConfiguration,
         fallbackPolicy: EmailFallbackPolicy
     )
+    case custom(any AppReportSubmissionHandling)
 }
 
 public protocol MailAvailabilityChecking {
@@ -226,14 +227,14 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
                     emailOptions: .init(allowsEmail: false, requiresEmail: false)
                 )
             )
-        case .endpoint, .endpointWithEmailFallback:
+        case .endpoint, .endpointWithEmailFallback, .custom:
             return .standard
         }
     }
 
     public var feedbackSubmissionRoute: FeedbackSubmissionRoute {
         switch delivery {
-        case .endpoint, .endpointWithEmailFallback:
+        case .endpoint, .endpointWithEmailFallback, .custom:
             return .endpoint
         case .email:
             switch platform {
@@ -295,6 +296,13 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
 
                 return try await makePendingDelivery(prepared: prepared, emailConfiguration: emailConfiguration)
             }
+
+        case let .custom(handler):
+            let preparedSubmission = try makePreparedAppReportSubmission(prepared: prepared)
+            try await handler.submit(preparedSubmission)
+            return .submitted(
+                AppReportSubmissionResponse(accepted: true, statusCode: 200)
+            )
         }
     }
 
@@ -466,6 +474,90 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
                 )
             )
         )
+    }
+
+    private func makePreparedAppReportSubmission(
+        prepared: PreparedSubmission
+    ) throws -> PreparedAppReportSubmission {
+        let report = reportBuilder.makeReport(
+            details: prepared.request.details,
+            diagnostics: prepared.diagnostics,
+            attachments: prepared.emailAttachments,
+            breadcrumbs: prepared.breadcrumbs
+        )
+        let bundle = try makeDiagnosticsBundle(
+            prepared: prepared,
+            report: report
+        )
+        return PreparedAppReportSubmission(
+            report: report.appReportPayload(),
+            metadata: report.metadata.appReportMetadata(capturedAt: prepared.submittedAt),
+            attachments: makePreparedAppReportAttachments(
+                userAttachments: prepared.userAttachments,
+                screenshotAttachments: prepared.inlineScreenshotAttachments
+            ),
+            diagnosticsBundle: bundle
+        )
+    }
+
+    private func makeDiagnosticsBundle(
+        prepared: PreparedSubmission,
+        report: FeedbackReport
+    ) throws -> AppReportBundle? {
+        let bundle = try bundleBuilder.build(
+            report: report,
+            submittedAt: prepared.submittedAt,
+            networkEvents: prepared.networkEvents,
+            screenshots: prepared.screenshots
+        )
+        defer {
+            try? bundleBuilder.cleanup(bundle)
+        }
+
+        let packageURL = try bundlePackager.package(
+            at: bundle.rootURL,
+            filename: bundlePackageFilename(for: prepared.submittedAt)
+        )
+
+        let data = try Data(contentsOf: packageURL)
+        return AppReportBundle(
+            fileName: packageURL.lastPathComponent,
+            mimeType: "application/zip",
+            data: data
+        )
+    }
+
+    private func makePreparedAppReportAttachments(
+        userAttachments: [FeedbackAttachment],
+        screenshotAttachments: [FeedbackAttachment]
+    ) -> [AppReportAttachment] {
+        let userPreparedAttachments: [AppReportAttachment] = userAttachments.compactMap { attachment in
+            guard let data = attachment.resolvedData else {
+                return nil
+            }
+
+            return AppReportAttachment(
+                kind: .attachment,
+                fileName: attachment.filename,
+                mimeType: attachment.contentType,
+                data: data
+            )
+        }
+
+        let screenshotPreparedAttachments: [AppReportAttachment] = screenshotAttachments.compactMap { attachment in
+            guard let data = attachment.resolvedData else {
+                return nil
+            }
+
+            return AppReportAttachment(
+                kind: .screenshot,
+                fileName: attachment.filename,
+                mimeType: attachment.contentType,
+                data: data
+            )
+        }
+
+        return userPreparedAttachments + screenshotPreparedAttachments
     }
 
     private func bundlePackageFilename(for date: Date) -> String {

@@ -166,8 +166,9 @@ public struct FeedbackForm: View {
                                     if let screenshotImage = makeFeedbackFormImage(from: screenshot.data) {
                                         screenshotImage
                                             .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 120, height: 80)
+                                            .scaledToFit()
+                                            .frame(width: 120, height: 80, alignment: .center)
+                                            .background(Color.secondary.opacity(0.08))
                                             .clipShape(RoundedRectangle(cornerRadius: 6))
                                             .clipped()
                                     }

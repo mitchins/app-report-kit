@@ -118,6 +118,30 @@ On macOS `email(...)` resolves to export/share only. It does not use `mailto:`.
 
 `temporaryDirectoryURL` remains valid until the host finishes presenting the mail/share flow. The host should then remove the exported files. `DiagnosticsDeliveryCleanup.cleanup(_:)` is the provided helper for that.
 
+## Custom transport
+
+If the host app wants to keep the collection UI but send to its own backend, use the custom delivery mode and implement `AppReportSubmissionHandling`.
+
+```swift
+final class CMSBugTransport: AppReportSubmissionHandling {
+    func submit(_ submission: PreparedAppReportSubmission) async throws {
+        // Map `submission.report`, `submission.metadata`, `submission.attachments`,
+        // and `submission.diagnosticsBundle` to your own API.
+    }
+}
+
+let submitter = AppReportDiagnosticsSubmitter(
+    reportBuilder: FeedbackReportBuilder(appId: "justcards"),
+    delivery: .custom(CMSBugTransport()),
+    support: .init(
+        networkRecorder: NetworkRecorder(),
+        screenshotProvider: MyScreenshotProvider()
+    )
+)
+```
+
+The prepared submission is data-backed, so the host can forward it to email, share, a private API, or a CMS-specific adapter without rebuilding the framework UI.
+
 ## Form policy examples for AppReportKitUI
 
 ```swift
