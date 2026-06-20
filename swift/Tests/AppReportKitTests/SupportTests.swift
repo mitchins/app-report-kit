@@ -189,6 +189,63 @@ final class SupportTests: XCTestCase {
         XCTAssertNil(prepared.diagnosticsBundle)
     }
 
+    func testFeedbackReportAppReportPayloadTrimsWhitespaceContextAndEmail() throws {
+        let payload: [String: Any] = [
+            "appId": "app-report-kit",
+            "kind": "bug",
+            "severity": "high",
+            "notes": "Broken export",
+            "email": " user@example.com ",
+            "metadata": [
+                "appVersion": "1.2.3",
+                "build": "42",
+                "osName": "iOS",
+                "osVersion": "18.5",
+                "deviceModel": "iPhone16,2",
+                "locale": "en_AU",
+                "clientVersion": "0.2.0",
+                "screen": "   "
+            ],
+            "attachments": [],
+            "breadcrumbs": []
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let report = try JSONDecoder().decode(FeedbackReport.self, from: data)
+
+        let appReportPayload = report.appReportPayload()
+
+        XCTAssertNil(appReportPayload.context)
+        XCTAssertEqual(appReportPayload.reporterEmail, "user@example.com")
+    }
+
+    func testFeedbackAttachmentResolvedDataLoadsLocalFilesAndIgnoresRemoteURLs() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        let fileURL = directoryURL.appendingPathComponent("attachment.txt")
+        try Data("hello".utf8).write(to: fileURL)
+
+        let localAttachment = FeedbackAttachment(
+            filename: "attachment.txt",
+            contentType: "text/plain",
+            byteCount: 0,
+            url: fileURL.path
+        )
+        let remoteAttachment = FeedbackAttachment(
+            filename: "attachment.txt",
+            contentType: "text/plain",
+            byteCount: 0,
+            url: "https://example.com/attachment.txt"
+        )
+
+        XCTAssertEqual(localAttachment.resolvedData, Data("hello".utf8))
+        XCTAssertNil(remoteAttachment.resolvedData)
+    }
+
     func testFeedbackFormSupportOptionsDefaultToDisabled() {
         XCTAssertEqual(FeedbackFormSupportOptions.disabled, FeedbackFormSupportOptions())
     }

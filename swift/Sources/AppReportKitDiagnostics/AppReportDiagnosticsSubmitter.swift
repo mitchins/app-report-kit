@@ -494,7 +494,7 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             metadata: report.metadata.appReportMetadata(capturedAt: prepared.submittedAt),
             attachments: makePreparedAppReportAttachments(
                 userAttachments: prepared.userAttachments,
-                screenshotAttachments: prepared.inlineScreenshotAttachments
+                screenshotAttachments: makePreparedScreenshotAttachments(from: prepared.screenshots)
             ),
             diagnosticsBundle: bundle
         )
@@ -518,6 +518,9 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             at: bundle.rootURL,
             filename: bundlePackageFilename(for: prepared.submittedAt)
         )
+        defer {
+            try? FileManager.default.removeItem(at: packageURL)
+        }
 
         let data = try Data(contentsOf: packageURL)
         return AppReportBundle(
@@ -531,33 +534,20 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         userAttachments: [FeedbackAttachment],
         screenshotAttachments: [FeedbackAttachment]
     ) -> [AppReportAttachment] {
-        let userPreparedAttachments: [AppReportAttachment] = userAttachments.compactMap { attachment in
-            guard let data = attachment.resolvedData else {
-                return nil
-            }
+        userAttachments.preparedAppReportAttachments(kind: .attachment)
+            + screenshotAttachments.preparedAppReportAttachments(kind: .screenshot)
+    }
 
-            return AppReportAttachment(
-                kind: .attachment,
-                fileName: attachment.filename,
-                mimeType: attachment.contentType,
-                data: data
+    private func makePreparedScreenshotAttachments(
+        from screenshots: [DiagnosticsAttachment]
+    ) -> [FeedbackAttachment] {
+        screenshots.map {
+            FeedbackAttachment(
+                filename: $0.sanitizedFilename(fallback: "screenshot.png"),
+                contentType: $0.contentType,
+                data: $0.data
             )
         }
-
-        let screenshotPreparedAttachments: [AppReportAttachment] = screenshotAttachments.compactMap { attachment in
-            guard let data = attachment.resolvedData else {
-                return nil
-            }
-
-            return AppReportAttachment(
-                kind: .screenshot,
-                fileName: attachment.filename,
-                mimeType: attachment.contentType,
-                data: data
-            )
-        }
-
-        return userPreparedAttachments + screenshotPreparedAttachments
     }
 
     private func bundlePackageFilename(for date: Date) -> String {

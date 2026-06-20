@@ -117,6 +117,23 @@ public protocol AppReportSubmissionHandling: Sendable {
     func submit(_ submission: PreparedAppReportSubmission) async throws
 }
 
+public extension Array where Element == FeedbackAttachment {
+    func preparedAppReportAttachments(kind: AppReportAttachment.Kind) -> [AppReportAttachment] {
+        compactMap { attachment in
+            guard let data = attachment.resolvedData else {
+                return nil
+            }
+
+            return AppReportAttachment(
+                kind: kind,
+                fileName: attachment.filename,
+                mimeType: attachment.contentType,
+                data: data
+            )
+        }
+    }
+}
+
 public extension FeedbackSubmissionRequest {
     func preparedAppReportSubmission(
         metadataProvider: FeedbackMetadataProviding,
@@ -125,13 +142,8 @@ public extension FeedbackSubmissionRequest {
     ) -> PreparedAppReportSubmission {
         let metadata = metadataProvider.makeMetadata(screen: screen)
         let preparedMetadata = metadata.appReportMetadata(capturedAt: capturedAt)
-        let attachments = Self.makePreparedAttachments(
-            from: self.attachments,
-            kind: .attachment
-        ) + Self.makePreparedAttachments(
-            from: screenshotAttachments,
-            kind: .screenshot
-        )
+        let attachments = self.attachments.preparedAppReportAttachments(kind: .attachment)
+            + screenshotAttachments.preparedAppReportAttachments(kind: .screenshot)
 
         return PreparedAppReportSubmission(
             report: AppReportPayload(
@@ -146,24 +158,6 @@ public extension FeedbackSubmissionRequest {
             attachments: attachments,
             diagnosticsBundle: diagnosticsBundle
         )
-    }
-
-    private static func makePreparedAttachments(
-        from attachments: [FeedbackAttachment],
-        kind: AppReportAttachment.Kind
-    ) -> [AppReportAttachment] {
-        attachments.compactMap { attachment in
-            guard let data = attachment.resolvedData else {
-                return nil
-            }
-
-            return AppReportAttachment(
-                kind: kind,
-                fileName: attachment.filename,
-                mimeType: attachment.contentType,
-                data: data
-            )
-        }
     }
 }
 
@@ -185,10 +179,10 @@ public extension FeedbackReport {
     func appReportPayload() -> AppReportPayload {
         AppReportPayload(
             type: kind.rawValue,
-            context: metadata.screen,
+            context: metadata.screen?.nilIfBlank,
             title: kind.rawValue.capitalized,
             notes: notes,
-            reporterEmail: email,
+            reporterEmail: email?.nilIfBlank,
             severity: severity.rawValue
         )
     }
@@ -208,12 +202,7 @@ public extension FeedbackAttachment {
             return try? Data(contentsOf: parsedURL)
         }
 
-        let fileURL = URL(fileURLWithPath: url)
-        guard fileURL.isFileURL else {
-            return nil
-        }
-
-        return try? Data(contentsOf: fileURL)
+        return try? Data(contentsOf: URL(fileURLWithPath: url))
     }
 }
 

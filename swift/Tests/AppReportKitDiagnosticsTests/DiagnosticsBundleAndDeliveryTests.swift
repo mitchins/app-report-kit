@@ -280,7 +280,7 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
                 networkRecorder: await makeRecorder(),
                 screenshotProvider: StaticScreenshotProvider()
             ),
-            configuration: .init(platform: .iOS)
+            configuration: .init(platform: .iOS, allowEndpointScreenshotAttachments: false)
         )
 
         _ = try await submitter.submit(
@@ -305,7 +305,8 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
             )
         )
 
-        let submission = try XCTUnwrap(handler.submissions.first)
+        let maybeSubmission = await handler.firstSubmission()
+        let submission = try XCTUnwrap(maybeSubmission)
         XCTAssertEqual(submission.report.type, "bug")
         XCTAssertEqual(submission.report.context, "InvoiceEditor")
         XCTAssertEqual(submission.report.title, "Bug")
@@ -1064,11 +1065,15 @@ private struct ThrowingPackager: DiagnosticsBundlePackager {
     }
 }
 
-private final class RecordingSubmissionHandler: AppReportSubmissionHandling, @unchecked Sendable {
-    var submissions: [PreparedAppReportSubmission] = []
+private actor RecordingSubmissionHandler: AppReportSubmissionHandling {
+    private var submissions: [PreparedAppReportSubmission] = []
 
     func submit(_ submission: PreparedAppReportSubmission) async throws {
         submissions.append(submission)
+    }
+
+    func firstSubmission() -> PreparedAppReportSubmission? {
+        submissions.first
     }
 }
 
