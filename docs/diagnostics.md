@@ -12,7 +12,7 @@ It captures only app-owned traffic sent through a `URLSessionConfiguration` the 
 - practical HAR 1.2 export at `network.har`
 - diagnostics bundle export with report, metadata, HAR, screenshots, and README
 - email/share preparation when no endpoint is configured
-- optional `FeedbackForm` hooks for technical details and screenshots
+- optional `FeedbackForm` hooks for logs and screenshots
 
 ## What it does not add
 
@@ -55,9 +55,9 @@ AppReportDiagnostics-2026-06-12T150800.apprdiag.zip
   [breadcrumbs.jsonl]
 ```
 
-When you enable technical details, the package includes `network.har`; when no breadcrumbs are present, `breadcrumbs.jsonl` is omitted.
+When you enable logs, the package includes `network.har`; when no breadcrumbs are present, `breadcrumbs.jsonl` is omitted.
 
-`network.har` is included only when technical details are enabled and recorded events exist.
+`network.har` is included only when logs are enabled and recorded events exist.
 
 Screenshots are included only when the host app supplies them.
 
@@ -124,6 +124,8 @@ If the host app wants to keep the collection UI but send to its own backend, use
 
 ```swift
 final class CMSBugTransport: AppReportSubmissionHandling {
+    let capabilities: AppReportSubmissionCapabilities = .all
+
     func submit(_ submission: PreparedAppReportSubmission) async throws {
         // Map `submission.report`, `submission.metadata`, `submission.attachments`,
         // and `submission.diagnosticsBundle` to your own API.
@@ -132,7 +134,7 @@ final class CMSBugTransport: AppReportSubmissionHandling {
 
 let submitter = AppReportDiagnosticsSubmitter(
     reportBuilder: FeedbackReportBuilder(appId: "justcards"),
-    delivery: .custom(CMSBugTransport()),
+    delivery: .custom(CMSBugTransport(), emailFallback: nil),
     support: .init(
         networkRecorder: NetworkRecorder(),
         screenshotProvider: MyScreenshotProvider()
@@ -141,6 +143,28 @@ let submitter = AppReportDiagnosticsSubmitter(
 ```
 
 The prepared submission is data-backed, so the host can forward it to email, share, a private API, or a CMS-specific adapter without rebuilding the framework UI.
+
+App and device metadata are always included in the prepared report. The optional toggle controls logs and other heavier diagnostics capture.
+
+If your custom backend cannot accept every payload kind, declare narrower capabilities on the handler and provide an optional fallback when you build `.custom(...)`. The form keeps a single primary CTA, then shows a confirmation only when the report contains files or images the custom route cannot carry.
+
+```swift
+final class CMSBugTransport: AppReportSubmissionHandling {
+    let capabilities: AppReportSubmissionCapabilities = [.images]
+
+    func submit(_ submission: PreparedAppReportSubmission) async throws {
+        // Submit the core report to the app backend.
+    }
+}
+
+let submitter = AppReportDiagnosticsSubmitter(
+    reportBuilder: FeedbackReportBuilder(appId: "justcards"),
+    delivery: .custom(
+        CMSBugTransport(),
+        emailFallback: .standard(recipient: "support@example.com", appName: "JustCards")
+    )
+)
+```
 
 ## Form policy examples for AppReportKitUI
 
@@ -170,7 +194,7 @@ FeedbackForm(submitter: submitter, policy: .bugOnly)
 // no issue kind picker, feedback-only mode
 FeedbackForm(submitter: submitter, policy: .feedbackOnly, copy: .improvement)
 
-// client debug preset keeps technical details enabled by default
+// client debug preset keeps logs enabled by default
 FeedbackForm(submitter: submitter, policy: .clientDebug)
 
 // custom policy (explicit)

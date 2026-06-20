@@ -113,8 +113,27 @@ public struct PreparedAppReportSubmission: Equatable, Sendable {
     }
 }
 
+public struct AppReportSubmissionCapabilities: OptionSet, Sendable, Equatable {
+    public let rawValue: Int
+
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    public static let files = AppReportSubmissionCapabilities(rawValue: 1 << 0)
+    public static let images = AppReportSubmissionCapabilities(rawValue: 1 << 1)
+    public static let all: AppReportSubmissionCapabilities = [.files, .images]
+}
+
 public protocol AppReportSubmissionHandling: Sendable {
     func submit(_ submission: PreparedAppReportSubmission) async throws
+    var capabilities: AppReportSubmissionCapabilities { get }
+}
+
+public extension AppReportSubmissionHandling {
+    var capabilities: AppReportSubmissionCapabilities {
+        .all
+    }
 }
 
 public extension Array where Element == FeedbackAttachment {

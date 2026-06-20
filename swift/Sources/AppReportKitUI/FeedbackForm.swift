@@ -151,8 +151,14 @@ public struct FeedbackForm: View {
                 }
 
                 if model.showsTechnicalDetailsToggle {
-                    Toggle(copy.includeTechnicalDetailsLabel, isOn: $model.includeTechnicalDetails)
-                        .accessibilityIdentifier("appreportkit.include-technical-details-toggle")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(copy.includeTechnicalDetailsLabel, isOn: $model.includeTechnicalDetails)
+                            .accessibilityIdentifier("appreportkit.include-technical-details-toggle")
+
+                        Text(copy.includeTechnicalDetailsFootnote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 if model.showsScreenshotToggle {
@@ -233,6 +239,38 @@ public struct FeedbackForm: View {
         .appReportBackground(style.backgroundColor)
         .appReportAccent(style.accentColor)
         .appReportFont(style.font)
+        .confirmationDialog(
+            copy.submissionConfirmationTitle,
+            isPresented: Binding(
+                get: { model.showsSubmissionConfirmation },
+                set: { isPresented in
+                    if !isPresented {
+                        model.dismissSubmissionConfirmation()
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let alternateDelivery = model.submissionConfirmationAlternateDelivery {
+                Button(copy.alternateActionTitle(for: alternateDelivery)) {
+                    model.sendUsingAlternateDelivery()
+                }
+            }
+
+            Button(copy.submissionConfirmationWithoutTitle(for: model.submissionConfirmationUnsupported)) {
+                model.sendWithoutUnsupportedPayloads()
+            }
+
+            Button(copy.cancelTitle, role: .cancel) {
+                model.dismissSubmissionConfirmation()
+            }
+        } message: {
+            Text(
+                copy.submissionConfirmationMessage(
+                    hasAlternateDelivery: model.submissionConfirmationAlternateDelivery != nil
+                )
+            )
+        }
     }
 }
 

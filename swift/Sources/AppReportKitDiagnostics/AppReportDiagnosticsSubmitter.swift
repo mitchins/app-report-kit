@@ -74,7 +74,7 @@ public enum AppReportDelivery: Sendable {
         AppReportEmailConfiguration,
         fallbackPolicy: EmailFallbackPolicy
     )
-    case custom(any AppReportSubmissionHandling)
+    case custom(any AppReportSubmissionHandling, emailFallback: AppReportEmailConfiguration?)
 }
 
 public protocol MailAvailabilityChecking {
@@ -179,6 +179,7 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
 
     private struct PreparedSubmission {
         let request: FeedbackSubmissionRequest
+        let providedDiagnostics: [String: String]
         let diagnostics: [String: String]
         let userAttachments: [FeedbackAttachment]
         let inlineScreenshotAttachments: [FeedbackAttachment]
@@ -256,14 +257,19 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         )
         let networkEvents = try await loadNetworkEvents(includeTechnicalDetails: request.includeTechnicalDetails)
         let breadcrumbs = redactBreadcrumbs(await loadBreadcrumbs())
+        let providedDiagnostics = request.includeTechnicalDetails
+            ? diagnosticsProvider?.makeDiagnostics() ?? [:]
+            : [:]
         let diagnostics = buildDiagnostics(
             from: request.diagnostics,
+            providedDiagnostics: providedDiagnostics,
             includeTechnicalDetails: request.includeTechnicalDetails,
             networkEvents: networkEvents
         )
         let inlineScreenshotAttachments = makeInlineScreenshotAttachments(from: screenshots)
         let prepared = PreparedSubmission(
             request: request,
+            providedDiagnostics: providedDiagnostics,
             diagnostics: diagnostics,
             userAttachments: request.attachments,
             inlineScreenshotAttachments: inlineScreenshotAttachments,
@@ -297,8 +303,26 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
                 return try await makePendingDelivery(prepared: prepared, emailConfiguration: emailConfiguration)
             }
 
-        case let .custom(handler):
-            let preparedSubmission = try makePreparedAppReportSubmission(prepared: prepared)
+        case let .custom(handler, emailFallback):
+            let unsupported = presentPayloads(prepared: prepared).subtracting(handler.capabilities)
+            if !unsupported.isEmpty {
+                return .needsConfirmation(
+                    FeedbackSubmissionConfirmation(
+                        unsupported: unsupported,
+                        alternateDelivery: try await makeAlternateDelivery(
+                            prepared: prepared,
+                            emailFallback: emailFallback
+                        )
+                    )
+                )
+            }
+
+            let preparedSubmission = try makePreparedAppReportSubmission(
+                prepared: prepared,
+                includeDiagnosticsBundle: prepared.request.includeTechnicalDetails
+                    && handler.capabilities.contains(.files)
+                    && hasOptionalLogs(prepared: prepared)
+            )
             try await handler.submit(preparedSubmission)
             return .submitted(
                 AppReportSubmissionResponse(accepted: true, statusCode: 200)
@@ -356,13 +380,14 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
 
     private func buildDiagnostics(
         from initialDiagnostics: [String: String],
+        providedDiagnostics: [String: String],
         includeTechnicalDetails: Bool,
         networkEvents: [NetworkEvent]
     ) -> [String: String] {
         var diagnostics = initialDiagnostics
 
         if includeTechnicalDetails {
-            diagnostics.merge(diagnosticsProvider?.makeDiagnostics() ?? [:]) { _, newValue in
+            diagnostics.merge(providedDiagnostics) { _, newValue in
                 newValue
             }
             diagnostics["technicalDetailsIncluded"] = "true"
@@ -370,6 +395,23 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         }
 
         return diagnosticsRedactor.redactMetadata(diagnostics)
+    }
+
+    private func presentPayloads(
+        prepared: PreparedSubmission
+    ) -> AppReportSubmissionCapabilities {
+        var payloads: AppReportSubmissionCapabilities = []
+
+        if !prepared.userAttachments.isEmpty
+            || (prepared.request.includeTechnicalDetails && hasOptionalLogs(prepared: prepared)) {
+            payloads.insert(.files)
+        }
+
+        if !prepared.screenshots.isEmpty {
+            payloads.insert(.images)
+        }
+
+        return payloads
     }
 
     private func makeInlineScreenshotAttachments(from screenshots: [DiagnosticsAttachment]) -> [FeedbackAttachment] {
@@ -476,8 +518,23 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         )
     }
 
+    private func makeAlternateDelivery(
+        prepared: PreparedSubmission,
+        emailFallback: AppReportEmailConfiguration?
+    ) async throws -> FeedbackPendingDelivery? {
+        guard let emailFallback else {
+            return nil
+        }
+
+        return try await makePendingDelivery(
+            prepared: prepared,
+            emailConfiguration: emailFallback
+        ).pendingDelivery
+    }
+
     private func makePreparedAppReportSubmission(
-        prepared: PreparedSubmission
+        prepared: PreparedSubmission,
+        includeDiagnosticsBundle: Bool
     ) throws -> PreparedAppReportSubmission {
         let report = reportBuilder.makeReport(
             details: prepared.request.details,
@@ -485,10 +542,9 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             attachments: prepared.emailAttachments,
             breadcrumbs: prepared.breadcrumbs
         )
-        let bundle = try makeDiagnosticsBundle(
-            prepared: prepared,
-            report: report
-        )
+        let bundle = includeDiagnosticsBundle
+            ? try makeDiagnosticsBundle(prepared: prepared, report: report)
+            : nil
         return PreparedAppReportSubmission(
             report: report.appReportPayload(),
             metadata: report.metadata.appReportMetadata(capturedAt: prepared.submittedAt),
@@ -498,6 +554,13 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             ),
             diagnosticsBundle: bundle
         )
+    }
+
+    private func hasOptionalLogs(prepared: PreparedSubmission) -> Bool {
+        !prepared.request.diagnostics.isEmpty
+            || !prepared.providedDiagnostics.isEmpty
+            || !prepared.networkEvents.isEmpty
+            || !prepared.breadcrumbs.isEmpty
     }
 
     private func makeDiagnosticsBundle(
@@ -564,23 +627,21 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
     }
 }
 
+private extension FeedbackSubmissionOutcome {
+    var pendingDelivery: FeedbackPendingDelivery? {
+        guard case let .needsUserAction(delivery) = self else {
+            return nil
+        }
+
+        return delivery
+    }
+}
+
 public enum DiagnosticsDeliveryCleanup {
     public static func cleanup(
         _ delivery: FeedbackPendingDelivery,
         fileManager: FileManager = .default
     ) throws {
-        let directoryURL: URL?
-        switch delivery {
-        case let .email(email):
-            directoryURL = email.temporaryDirectoryURL
-        case let .share(share):
-            directoryURL = share.temporaryDirectoryURL
-        }
-
-        guard let directoryURL, fileManager.fileExists(atPath: directoryURL.path) else {
-            return
-        }
-
-        try fileManager.removeItem(at: directoryURL)
+        try FeedbackPendingDeliveryCleanup.cleanup(delivery, fileManager: fileManager)
     }
 }

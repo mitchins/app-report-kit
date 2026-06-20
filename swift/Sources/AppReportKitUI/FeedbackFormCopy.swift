@@ -9,7 +9,8 @@ public struct FeedbackFormCopy: Equatable, Sendable {
     public var notesLabel = "Notes / steps"
     public var notesPlaceholder = "Describe what happened, or what you want to change."
     public var emailPlaceholder = "Email (optional)"
-    public var includeTechnicalDetailsLabel = "Include technical details to help diagnose the problem"
+    public var includeTechnicalDetailsLabel = "Include logs"
+    public var includeTechnicalDetailsFootnote = "App and device info is always included. Logs are optional."
     public var includeScreenshotLabel = "Attach screenshot"
     public var submitButtonTitle = "Send report"
     public var emailSubmitButtonTitle = "Email report"
@@ -24,6 +25,15 @@ public struct FeedbackFormCopy: Equatable, Sendable {
     public var successMessage = "Thanks — your report was queued."
     public var validationErrorMessage = "Please add notes or steps before sending."
     public var submissionErrorMessage = "Unable to send right now."
+    public var submissionConfirmationTitle = "This app can't include everything in your report."
+    public var submissionConfirmationMessageWithAlternate = "You can send the report without those details, or use another option to include them."
+    public var submissionConfirmationMessageWithoutAlternate = "You can send the report without those details."
+    public var sendWithoutPrefix = "Send without"
+    public var filesNoun = "logs"
+    public var imagesNoun = "images"
+    public var emailWithDetailsTitle = "Email report with details"
+    public var shareWithDetailsTitle = "Share report with details"
+    public var cancelTitle = "Cancel"
 
     public static let issue = FeedbackFormCopy {
         $0.reportSectionTitle = "Report a Problem"
@@ -71,6 +81,41 @@ public struct FeedbackFormCopy: Equatable, Sendable {
         case .unavailable:
             unavailableSubmitButtonDisabledTitle
         }
+    }
+
+    public func submissionConfirmationWithoutTitle(
+        for unsupported: AppReportSubmissionCapabilities
+    ) -> String {
+        var nouns: [String] = []
+        if unsupported.contains(.files) {
+            nouns.append(filesNoun)
+        }
+        if unsupported.contains(.images) {
+            nouns.append(imagesNoun)
+        }
+
+        guard !nouns.isEmpty else {
+            return submitButtonTitle
+        }
+
+        return "\(sendWithoutPrefix) \(nouns.joined(separator: " & "))"
+    }
+
+    public func alternateActionTitle(for delivery: FeedbackPendingDelivery) -> String {
+        switch delivery {
+        case .email:
+            emailWithDetailsTitle
+        case .share:
+            shareWithDetailsTitle
+        }
+    }
+
+    public func submissionConfirmationMessage(
+        hasAlternateDelivery: Bool
+    ) -> String {
+        hasAlternateDelivery
+            ? submissionConfirmationMessageWithAlternate
+            : submissionConfirmationMessageWithoutAlternate
     }
 
     public static let standard = FeedbackFormCopy()

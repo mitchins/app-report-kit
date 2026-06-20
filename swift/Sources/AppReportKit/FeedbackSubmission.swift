@@ -169,9 +169,44 @@ public enum FeedbackPendingDelivery: Equatable, Sendable {
     case share(FeedbackPendingShare)
 }
 
+public struct FeedbackSubmissionConfirmation: Equatable, Sendable {
+    public let unsupported: AppReportSubmissionCapabilities
+    public let alternateDelivery: FeedbackPendingDelivery?
+
+    public init(
+        unsupported: AppReportSubmissionCapabilities,
+        alternateDelivery: FeedbackPendingDelivery? = nil
+    ) {
+        self.unsupported = unsupported
+        self.alternateDelivery = alternateDelivery
+    }
+}
+
 public enum FeedbackSubmissionOutcome: Equatable, Sendable {
     case submitted(AppReportSubmissionResponse)
     case needsUserAction(FeedbackPendingDelivery)
+    case needsConfirmation(FeedbackSubmissionConfirmation)
+}
+
+public enum FeedbackPendingDeliveryCleanup {
+    public static func cleanup(
+        _ delivery: FeedbackPendingDelivery,
+        fileManager: FileManager = .default
+    ) throws {
+        let directoryURL: URL?
+        switch delivery {
+        case let .email(email):
+            directoryURL = email.temporaryDirectoryURL
+        case let .share(share):
+            directoryURL = share.temporaryDirectoryURL
+        }
+
+        guard let directoryURL, fileManager.fileExists(atPath: directoryURL.path) else {
+            return
+        }
+
+        try fileManager.removeItem(at: directoryURL)
+    }
 }
 
 public struct FeedbackFormSupportOptions: Equatable, Sendable {

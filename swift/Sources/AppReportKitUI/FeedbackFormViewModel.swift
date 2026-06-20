@@ -16,6 +16,7 @@ final class FeedbackFormViewModel: ObservableObject {
     @Published var isSubmitting = false
     @Published var isSubmitted = false
     @Published var errorMessage: String?
+    @Published private(set) var submissionConfirmation: FeedbackSubmissionConfirmation?
 
     private let submitter: any FeedbackSubmitting
     private let deliveryHandler: FeedbackDeliveryHandler?
@@ -30,6 +31,8 @@ final class FeedbackFormViewModel: ObservableObject {
     private let shouldShowSeverityPicker: Bool
     private let shouldShowTechnicalDetailsToggle: Bool
     private let shouldShowScreenshotToggle: Bool
+    private var pendingConfirmationRequest: FeedbackSubmissionRequest?
+    private(set) var confirmationActionTask: Task<Void, Never>?
 
     init(
         submitter: any FeedbackSubmitting,
@@ -118,6 +121,18 @@ final class FeedbackFormViewModel: ObservableObject {
         !screenshotPreviews.isEmpty
     }
 
+    var showsSubmissionConfirmation: Bool {
+        submissionConfirmation != nil
+    }
+
+    var submissionConfirmationAlternateDelivery: FeedbackPendingDelivery? {
+        submissionConfirmation?.alternateDelivery
+    }
+
+    var submissionConfirmationUnsupported: AppReportSubmissionCapabilities {
+        submissionConfirmation?.unsupported ?? []
+    }
+
     func removeScreenshot(_ id: FeedbackFormScreenshotPreview.ID) {
         screenshotPreviews.removeAll { $0.id == id }
         if screenshotPreviews.isEmpty {
@@ -136,52 +151,60 @@ final class FeedbackFormViewModel: ObservableObject {
             return
         }
 
-        isSubmitting = true
-        errorMessage = nil
-        isSubmitted = false
-        defer { isSubmitting = false }
+        let shouldIncludeScreenshot = hasScreenshotsForSubmission && shouldShowScreenshotToggle && includeScreenshot
+        let request = FeedbackSubmissionRequest(
+            details: .init(
+                kind: kind,
+                notes: notes,
+                severity: severity,
+                email: normalizedEmail,
+                screen: screenContext
+            ),
+            options: .init(
+                includeTechnicalDetails: shouldShowTechnicalDetailsToggle && includeTechnicalDetails,
+                includeScreenshot: shouldIncludeScreenshot
+            ),
+            screenshotAttachments: shouldIncludeScreenshot
+                ? Self.makeScreenshotAttachments(from: screenshotPreviews)
+                : []
+        )
+        await runSubmission(request)
+    }
 
-        do {
-            let shouldIncludeScreenshot = hasScreenshotsForSubmission && shouldShowScreenshotToggle && includeScreenshot
-            let request = FeedbackSubmissionRequest(
-                details: .init(
-                    kind: kind,
-                    notes: notes,
-                    severity: severity,
-                    email: normalizedEmail,
-                    screen: screenContext
-                ),
-                options: .init(
-                    includeTechnicalDetails: shouldShowTechnicalDetailsToggle && includeTechnicalDetails,
-                    includeScreenshot: shouldIncludeScreenshot
-                ),
-                screenshotAttachments: shouldIncludeScreenshot
-                    ? Self.makeScreenshotAttachments(from: screenshotPreviews)
-                    : []
-            )
-
-            let outcome = try await submitter.submit(request)
-            switch outcome {
-            case .submitted:
-                markSubmitted()
-            case let .needsUserAction(pendingDelivery):
-                guard let deliveryHandler else {
-                    errorMessage = copy.submissionErrorMessage
-                    return
-                }
-
-                let completed = await deliveryHandler(pendingDelivery)
-                guard completed else {
-                    return
-                }
-
-                markSubmitted()
-            }
-        } catch AppReportClientError.emptyNotes {
-            errorMessage = copy.validationErrorMessage
-        } catch {
-            errorMessage = copy.submissionErrorMessage
+    func sendWithoutUnsupportedPayloads() {
+        guard let request = pendingConfirmationRequest else {
+            return
         }
+
+        let unsupported = submissionConfirmation?.unsupported ?? []
+        let strippedRequest = Self.request(
+            request,
+            removing: unsupported
+        )
+        cleanupPendingConfirmationDeliveryIfNeeded()
+        submissionConfirmation = nil
+        pendingConfirmationRequest = nil
+        confirmationActionTask = Task {
+            await self.runSubmission(strippedRequest)
+        }
+    }
+
+    func sendUsingAlternateDelivery() {
+        guard let pendingDelivery = submissionConfirmation?.alternateDelivery else {
+            return
+        }
+
+        submissionConfirmation = nil
+        pendingConfirmationRequest = nil
+        confirmationActionTask = Task {
+            await self.deliverAlternate(pendingDelivery)
+        }
+    }
+
+    func dismissSubmissionConfirmation() {
+        cleanupPendingConfirmationDeliveryIfNeeded()
+        submissionConfirmation = nil
+        pendingConfirmationRequest = nil
     }
 
     private var trimmedNotes: String {
@@ -197,12 +220,101 @@ final class FeedbackFormViewModel: ObservableObject {
         return visibleEmail.isEmpty ? nil : visibleEmail
     }
 
+    private func runSubmission(_ request: FeedbackSubmissionRequest) async {
+        isSubmitting = true
+        errorMessage = nil
+        isSubmitted = false
+        defer { isSubmitting = false }
+
+        do {
+            try await handleSubmission(request)
+        } catch AppReportClientError.emptyNotes {
+            errorMessage = copy.validationErrorMessage
+        } catch {
+            errorMessage = copy.submissionErrorMessage
+        }
+    }
+
+    private func handleSubmission(_ request: FeedbackSubmissionRequest) async throws {
+        let outcome = try await submitter.submit(request)
+        switch outcome {
+        case .submitted:
+            submissionConfirmation = nil
+            pendingConfirmationRequest = nil
+            markSubmitted()
+        case let .needsUserAction(pendingDelivery):
+            submissionConfirmation = nil
+            pendingConfirmationRequest = nil
+            guard let deliveryHandler else {
+                try? FeedbackPendingDeliveryCleanup.cleanup(pendingDelivery)
+                errorMessage = copy.submissionErrorMessage
+                return
+            }
+
+            let completed = await deliveryHandler(pendingDelivery)
+            guard completed else {
+                return
+            }
+
+            markSubmitted()
+        case let .needsConfirmation(confirmation):
+            submissionConfirmation = confirmation
+            pendingConfirmationRequest = request
+        }
+    }
+
+    private func deliverAlternate(_ delivery: FeedbackPendingDelivery) async {
+        guard let deliveryHandler else {
+            try? FeedbackPendingDeliveryCleanup.cleanup(delivery)
+            errorMessage = copy.submissionErrorMessage
+            return
+        }
+
+        let completed = await deliveryHandler(delivery)
+        guard completed else {
+            return
+        }
+
+        markSubmitted()
+    }
+
+    private func cleanupPendingConfirmationDeliveryIfNeeded() {
+        guard let pendingDelivery = submissionConfirmation?.alternateDelivery else {
+            return
+        }
+
+        try? FeedbackPendingDeliveryCleanup.cleanup(pendingDelivery)
+    }
+
     private func markSubmitted() {
         notes = ""
         email = ""
         includeTechnicalDetails = shouldShowTechnicalDetailsToggle && policy.technicalDetailsDefaultOn
         includeScreenshot = shouldShowScreenshotToggle && policy.screenshotDefaultOn
+        submissionConfirmation = nil
+        pendingConfirmationRequest = nil
         isSubmitted = true
+    }
+
+    private static func request(
+        _ request: FeedbackSubmissionRequest,
+        removing unsupported: AppReportSubmissionCapabilities
+    ) -> FeedbackSubmissionRequest {
+        let dropFiles = unsupported.contains(.files)
+        let dropImages = unsupported.contains(.images)
+
+        return FeedbackSubmissionRequest(
+            details: request.details,
+            options: .init(
+                includeTechnicalDetails: dropFiles ? false : request.includeTechnicalDetails,
+                includeScreenshot: dropImages ? false : request.includeScreenshot
+            ),
+            payload: .init(
+                diagnostics: request.diagnostics,
+                attachments: dropFiles ? [] : request.attachments
+            ),
+            screenshotAttachments: dropImages ? [] : request.screenshotAttachments
+        )
     }
 
     private static func resolveInitialKind(
