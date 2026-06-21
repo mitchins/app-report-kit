@@ -570,6 +570,45 @@ final class FeedbackFormModelTests: XCTestCase {
         XCTAssertFalse(model.showsSubmissionConfirmation)
     }
 
+    func testCancelledAlternateDeliveryCleansUpTemporaryFiles() async throws {
+        let temporaryDirectoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectoryURL, withIntermediateDirectories: true)
+
+        let submitter = MockFeedbackSubmitter(
+            outcome: .needsConfirmation(
+                FeedbackSubmissionConfirmation(
+                    unsupported: [.images],
+                    alternateDelivery: .share(
+                        FeedbackPendingShare(
+                            subject: "JustCards Report",
+                            message: "Share logs",
+                            itemURLs: [],
+                            temporaryDirectoryURL: temporaryDirectoryURL
+                        )
+                    )
+                )
+            ),
+            supportOptions: FeedbackFormSupportOptions(
+                allowsTechnicalDetails: true
+            )
+        )
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug,
+            deliveryHandler: { _ in false }
+        )
+        model.notes = "Need help"
+
+        await model.submit()
+        model.sendUsingAlternateDelivery()
+        await model.confirmationActionTask?.value
+
+        XCTAssertFalse(model.isSubmitted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryDirectoryURL.path))
+    }
+
     func testLogsConfirmationWithoutHandlerShowsErrorForAlternateDelivery() async throws {
         let temporaryDirectoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -773,7 +812,11 @@ private final class MockFeedbackSubmitter: FeedbackSubmitting, FeedbackFormSuppo
         route: FeedbackSubmissionRoute = .endpoint,
         screenshots: [FeedbackScreenshot] = []
     ) {
-        self.outcomes = outcomes ?? [outcome]
+        if let outcomes, !outcomes.isEmpty {
+            self.outcomes = outcomes
+        } else {
+            self.outcomes = [outcome]
+        }
         feedbackFormSupportOptions = supportOptions
         feedbackSubmissionRoute = route
         self.screenshots = screenshots

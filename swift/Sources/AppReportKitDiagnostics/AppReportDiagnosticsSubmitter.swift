@@ -526,10 +526,14 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
             return nil
         }
 
-        return try await makePendingDelivery(
-            prepared: prepared,
-            emailConfiguration: emailFallback
-        ).pendingDelivery
+        do {
+            return try await makePendingDelivery(
+                prepared: prepared,
+                emailConfiguration: emailFallback
+            ).pendingDelivery
+        } catch {
+            return nil
+        }
     }
 
     private func makePreparedAppReportSubmission(

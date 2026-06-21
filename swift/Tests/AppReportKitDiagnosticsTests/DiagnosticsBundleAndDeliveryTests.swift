@@ -395,6 +395,50 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertNil(firstSubmission)
     }
 
+    func testCustomDeliveryStillReturnsConfirmationWhenAlternatePreparationFails() async throws {
+        let handler = RecordingSubmissionHandler(
+            capabilities: [.images]
+        )
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(
+                handler,
+                emailFallback: .standard(
+                    recipient: "support@example.com",
+                    appName: "JustCards"
+                )
+            ),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder()
+            ),
+            configuration: .init(
+                bundlePackager: ThrowingPackager(),
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: false),
+                platform: .iOS
+            )
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: true)
+            )
+        )
+
+        guard case let .needsConfirmation(confirmation) = outcome else {
+            return XCTFail("Expected logs confirmation")
+        }
+
+        XCTAssertEqual(confirmation.unsupported, [.files])
+        XCTAssertNil(confirmation.alternateDelivery)
+        let firstSubmission = await handler.firstSubmission()
+        XCTAssertNil(firstSubmission)
+    }
+
     func testCustomDeliveryCanRequireUserChoiceBeforeSendingImages() async throws {
         let handler = RecordingSubmissionHandler(
             capabilities: [.files]

@@ -272,6 +272,7 @@ final class FeedbackFormViewModel: ObservableObject {
 
         let completed = await deliveryHandler(delivery)
         guard completed else {
+            try? FeedbackPendingDeliveryCleanup.cleanup(delivery)
             return
         }
 
