@@ -124,6 +124,128 @@ final class SupportTests: XCTestCase {
         XCTAssertEqual(report.diagnostics?["context"], "preview")
     }
 
+    func testPreparedAppReportSubmissionBuildsTypedPayloadMetadataAndAttachments() {
+        let request = FeedbackSubmissionRequest(
+            details: .init(
+                kind: .bug,
+                notes: "Broken export",
+                severity: .high,
+                email: " person@example.com ",
+                screen: "InvoiceEditor"
+            ),
+            payload: .init(
+                diagnostics: ["lastAction": "Tapped Export"],
+                attachments: [
+                    FeedbackAttachment(
+                        filename: "log.txt",
+                        contentType: "text/plain",
+                        data: Data("log".utf8)
+                    )
+                ]
+            ),
+            screenshotAttachments: [
+                FeedbackAttachment(
+                    filename: "screenshot.png",
+                    contentType: "image/png",
+                    data: Data("png".utf8)
+                )
+            ]
+        )
+
+        let prepared = request.preparedAppReportSubmission(
+            metadataProvider: FixedMetadataProvider(
+                metadata: FeedbackMetadata(
+                    app: .init(
+                        version: "1.2.3",
+                        build: "42",
+                        clientVersion: "0.2.0",
+                        screen: "InvoiceEditor"
+                    ),
+                    device: .init(
+                        osName: "iOS",
+                        osVersion: "18.5",
+                        model: "iPhone16,2",
+                        locale: "en_AU"
+                    )
+                )
+            ),
+            capturedAt: Date(timeIntervalSince1970: 123)
+        )
+
+        XCTAssertEqual(prepared.report.type, "bug")
+        XCTAssertEqual(prepared.report.context, "InvoiceEditor")
+        XCTAssertEqual(prepared.report.title, "Bug")
+        XCTAssertEqual(prepared.report.notes, "Broken export")
+        XCTAssertEqual(prepared.report.reporterEmail, "person@example.com")
+        XCTAssertEqual(prepared.report.severity, "high")
+        XCTAssertEqual(prepared.metadata.appVersion, "1.2.3")
+        XCTAssertEqual(prepared.metadata.buildNumber, "42")
+        XCTAssertEqual(prepared.metadata.localeIdentifier, "en_AU")
+        XCTAssertEqual(prepared.metadata.timezoneIdentifier, TimeZone.current.identifier)
+        XCTAssertEqual(prepared.metadata.capturedAt, Date(timeIntervalSince1970: 123))
+        XCTAssertEqual(prepared.attachments.map(\.kind), [.attachment, .screenshot])
+        XCTAssertEqual(prepared.attachments.map(\.fileName), ["log.txt", "screenshot.png"])
+        XCTAssertEqual(prepared.attachments.map(\.mimeType), ["text/plain", "image/png"])
+        XCTAssertNil(prepared.diagnosticsBundle)
+    }
+
+    func testFeedbackReportAppReportPayloadTrimsWhitespaceContextAndEmail() throws {
+        let payload: [String: Any] = [
+            "appId": "app-report-kit",
+            "kind": "bug",
+            "severity": "high",
+            "notes": "Broken export",
+            "email": " user@example.com ",
+            "metadata": [
+                "appVersion": "1.2.3",
+                "build": "42",
+                "osName": "iOS",
+                "osVersion": "18.5",
+                "deviceModel": "iPhone16,2",
+                "locale": "en_AU",
+                "clientVersion": "0.2.0",
+                "screen": "   "
+            ],
+            "attachments": [],
+            "breadcrumbs": []
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let report = try JSONDecoder().decode(FeedbackReport.self, from: data)
+
+        let appReportPayload = report.appReportPayload()
+
+        XCTAssertNil(appReportPayload.context)
+        XCTAssertEqual(appReportPayload.reporterEmail, "user@example.com")
+    }
+
+    func testFeedbackAttachmentResolvedDataLoadsLocalFilesAndIgnoresRemoteURLs() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        let fileURL = directoryURL.appendingPathComponent("attachment.txt")
+        try Data("hello".utf8).write(to: fileURL)
+
+        let localAttachment = FeedbackAttachment(
+            filename: "attachment.txt",
+            contentType: "text/plain",
+            byteCount: 0,
+            url: fileURL.path
+        )
+        let remoteAttachment = FeedbackAttachment(
+            filename: "attachment.txt",
+            contentType: "text/plain",
+            byteCount: 0,
+            url: "https://example.com/attachment.txt"
+        )
+
+        XCTAssertEqual(localAttachment.resolvedData, Data("hello".utf8))
+        XCTAssertNil(remoteAttachment.resolvedData)
+    }
+
     func testFeedbackFormSupportOptionsDefaultToDisabled() {
         XCTAssertEqual(FeedbackFormSupportOptions.disabled, FeedbackFormSupportOptions())
     }
@@ -181,6 +303,10 @@ final class SupportTests: XCTestCase {
                 contents.contains("capture(") && contents.contains("URLSession"),
                 "Unexpected URLSession capture plumbing in \(fileURL.lastPathComponent)"
             )
+            if fileURL.lastPathComponent == "FeedbackForm.swift" {
+                XCTAssertTrue(contents.contains(".scaledToFit()"), "Screenshot preview should fit within its frame")
+                XCTAssertFalse(contents.contains(".scaledToFill()"), "Screenshot preview should no longer crop to fill")
+            }
         }
     }
 

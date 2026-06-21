@@ -270,6 +270,244 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
         XCTAssertEqual(share.itemURLs.first?.pathExtension, "zip")
     }
 
+    func testCustomDeliveryReceivesPreparedSubmissionWithBundleAndAttachments() async throws {
+        let handler = RecordingSubmissionHandler()
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(handler, emailFallback: nil),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(platform: .iOS, allowEndpointScreenshotAttachments: false)
+        )
+
+        _ = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed",
+                    severity: .high,
+                    email: "user@example.com",
+                    screen: "InvoiceEditor"
+                ),
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true),
+                payload: .init(
+                    attachments: [
+                        FeedbackAttachment(
+                            filename: "log.txt",
+                            contentType: "text/plain",
+                            data: Data("log".utf8)
+                        )
+                    ]
+                )
+            )
+        )
+
+        let maybeSubmission = await handler.firstSubmission()
+        let submission = try XCTUnwrap(maybeSubmission)
+        XCTAssertEqual(submission.report.type, "bug")
+        XCTAssertEqual(submission.report.context, "InvoiceEditor")
+        XCTAssertEqual(submission.report.title, "Bug")
+        XCTAssertEqual(submission.report.notes, "Export failed")
+        XCTAssertEqual(submission.report.reporterEmail, "user@example.com")
+        XCTAssertEqual(submission.report.severity, "high")
+        XCTAssertEqual(submission.attachments.map(\.kind), [.attachment, .screenshot])
+        XCTAssertEqual(submission.attachments.map(\.fileName), ["log.txt", "screenshot-1.png"])
+        XCTAssertTrue(submission.attachments.contains { $0.fileName == "screenshot-1.png" })
+        XCTAssertNotNil(submission.diagnosticsBundle)
+        XCTAssertTrue(submission.diagnosticsBundle?.fileName.hasSuffix(".zip") == true)
+        XCTAssertEqual(submission.diagnosticsBundle?.mimeType, "application/zip")
+    }
+
+    func testCustomDeliveryWithoutLogsSkipsDiagnosticsBundle() async throws {
+        let handler = RecordingSubmissionHandler()
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(handler, emailFallback: nil),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder()
+            ),
+            configuration: .init(platform: .iOS)
+        )
+
+        _ = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: false)
+            )
+        )
+
+        let maybeSubmission = await handler.firstSubmission()
+        let submission = try XCTUnwrap(maybeSubmission)
+        XCTAssertNil(submission.diagnosticsBundle)
+    }
+
+    func testCustomDeliveryCanRequireUserChoiceBeforeSendingLogs() async throws {
+        let handler = RecordingSubmissionHandler(
+            capabilities: [.images]
+        )
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(
+                handler,
+                emailFallback: .standard(
+                    recipient: "support@example.com",
+                    appName: "JustCards"
+                )
+            ),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: true),
+                platform: .iOS
+            )
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: true, includeScreenshot: true)
+            )
+        )
+
+        guard case let .needsConfirmation(confirmation) = outcome else {
+            return XCTFail("Expected logs confirmation")
+        }
+
+        XCTAssertEqual(confirmation.unsupported, [.files])
+        guard case let .email(email)? = confirmation.alternateDelivery else {
+            return XCTFail("Expected alternate email delivery")
+        }
+        XCTAssertTrue(email.attachments.contains { $0.fileURL.lastPathComponent == "network.har" })
+        let firstSubmission = await handler.firstSubmission()
+        XCTAssertNil(firstSubmission)
+    }
+
+    func testCustomDeliveryStillReturnsConfirmationWhenAlternatePreparationFails() async throws {
+        let handler = RecordingSubmissionHandler(
+            capabilities: [.images]
+        )
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(
+                handler,
+                emailFallback: .standard(
+                    recipient: "support@example.com",
+                    appName: "JustCards"
+                )
+            ),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder()
+            ),
+            configuration: .init(
+                bundlePackager: ThrowingPackager(),
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: false),
+                platform: .iOS
+            )
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: true)
+            )
+        )
+
+        guard case let .needsConfirmation(confirmation) = outcome else {
+            return XCTFail("Expected logs confirmation")
+        }
+
+        XCTAssertEqual(confirmation.unsupported, [.files])
+        XCTAssertNil(confirmation.alternateDelivery)
+        let firstSubmission = await handler.firstSubmission()
+        XCTAssertNil(firstSubmission)
+    }
+
+    func testCustomDeliveryCanRequireUserChoiceBeforeSendingImages() async throws {
+        let handler = RecordingSubmissionHandler(
+            capabilities: [.files]
+        )
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(
+                handler,
+                emailFallback: .standard(
+                    recipient: "support@example.com",
+                    appName: "JustCards"
+                )
+            ),
+            support: .init(
+                diagnosticsProvider: FixedDiagnosticsProvider(),
+                networkRecorder: await makeRecorder(),
+                screenshotProvider: StaticScreenshotProvider()
+            ),
+            configuration: .init(
+                mailAvailabilityChecker: StaticMailAvailabilityChecker(value: true),
+                platform: .iOS
+            )
+        )
+
+        let outcome = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: false, includeScreenshot: true)
+            )
+        )
+
+        guard case let .needsConfirmation(confirmation) = outcome else {
+            return XCTFail("Expected image confirmation")
+        }
+
+        XCTAssertEqual(confirmation.unsupported, [.images])
+        let firstSubmission = await handler.firstSubmission()
+        XCTAssertNil(firstSubmission)
+    }
+
+    func testCustomDeliveryWithNoLogsDoesNotRequireFileCapability() async throws {
+        let handler = RecordingSubmissionHandler(
+            capabilities: [.images]
+        )
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(handler, emailFallback: nil),
+            support: .init(),
+            configuration: .init(platform: .iOS)
+        )
+
+        _ = try await submitter.submit(
+            FeedbackSubmissionRequest(
+                details: .init(
+                    kind: .bug,
+                    notes: "Export failed"
+                ),
+                options: .init(includeTechnicalDetails: true, includeScreenshot: false)
+            )
+        )
+
+        let maybeSubmission = await handler.firstSubmission()
+        let submission = try XCTUnwrap(maybeSubmission)
+        XCTAssertNil(submission.diagnosticsBundle)
+    }
+
     func testDiagnosticsSubmitterDefaultsToEmailSubmissionPolicyForEmailDelivery() async {
         let submitter = await makeDiagnosticsSubmitter(
             delivery: .email(.standard(recipient: "support@example.com", appName: "JustCards")),
@@ -1011,6 +1249,25 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 private struct ThrowingPackager: DiagnosticsBundlePackager {
     func package(at _: URL, filename _: String) throws -> URL {
         throw NSError(domain: "DiagnosticsBundlePackagerTest", code: 1)
+    }
+}
+
+private actor RecordingSubmissionHandler: AppReportSubmissionHandling {
+    private var submissions: [PreparedAppReportSubmission] = []
+    nonisolated let capabilities: AppReportSubmissionCapabilities
+
+    init(
+        capabilities: AppReportSubmissionCapabilities = .all
+    ) {
+        self.capabilities = capabilities
+    }
+
+    func submit(_ submission: PreparedAppReportSubmission) async throws {
+        submissions.append(submission)
+    }
+
+    func firstSubmission() -> PreparedAppReportSubmission? {
+        submissions.first
     }
 }
 

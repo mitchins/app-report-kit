@@ -42,6 +42,8 @@ final class FeedbackFormModelTests: XCTestCase {
         XCTAssertFalse(FeedbackFormCopy.standard.exportSubmitButtonTitle.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.submitButtonDisabledTitle.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.includeTechnicalDetailsLabel.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.includeTechnicalDetailsFootnote.isEmpty)
+        XCTAssertFalse(FeedbackFormCopy.standard.submissionConfirmationTitle.isEmpty)
         XCTAssertFalse(FeedbackFormCopy.standard.includeScreenshotLabel.isEmpty)
         XCTAssertEqual(FeedbackFormCopy.standard.exportSubmitButtonDisabledTitle, "Add notes to export")
         XCTAssertEqual(FeedbackFormCopy.standard.unavailableSubmitButtonDisabledTitle, "Add notes to export")
@@ -429,13 +431,18 @@ final class FeedbackFormModelTests: XCTestCase {
     }
 
     func testPendingDeliveryWithoutHandlerShowsError() async throws {
+        let temporaryDirectoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectoryURL, withIntermediateDirectories: true)
+
         let submitter = MockFeedbackSubmitter(
             outcome: .needsUserAction(
                 .share(
                     FeedbackPendingShare(
                         subject: "JustCards Report",
                         message: "Share this bundle",
-                        itemURLs: [URL(fileURLWithPath: "/tmp/AppReportDiagnostics.bundle")]
+                        itemURLs: [URL(fileURLWithPath: "/tmp/AppReportDiagnostics.bundle")],
+                        temporaryDirectoryURL: temporaryDirectoryURL
                     )
                 )
             )
@@ -447,6 +454,7 @@ final class FeedbackFormModelTests: XCTestCase {
 
         XCTAssertFalse(model.isSubmitted)
         XCTAssertEqual(model.errorMessage, FeedbackFormCopy.standard.submissionErrorMessage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryDirectoryURL.path))
     }
 
     func testPendingDeliveryHandlerReturningFalseKeepsFormState() async throws {
@@ -473,6 +481,171 @@ final class FeedbackFormModelTests: XCTestCase {
         XCTAssertFalse(model.isSubmitted)
         XCTAssertEqual(model.notes, "Need help")
         XCTAssertEqual(model.email, "person@example.com")
+    }
+
+    func testLogsConfirmationCanResubmitWithoutLogs() async throws {
+        let submitter = MockFeedbackSubmitter(
+            outcomes: [
+                .needsConfirmation(
+                    FeedbackSubmissionConfirmation(
+                        unsupported: [.files],
+                        alternateDelivery: .email(
+                            FeedbackPendingEmail(
+                                recipients: ["support@example.com"],
+                                subject: "JustCards Report",
+                                body: "Email logs",
+                                attachments: []
+                            )
+                        )
+                    )
+                ),
+                .submitted(
+                    AppReportSubmissionResponse(accepted: true, statusCode: 202)
+                )
+            ],
+            supportOptions: FeedbackFormSupportOptions(
+                allowsTechnicalDetails: true
+            )
+        )
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug
+        )
+        model.notes = "Need help"
+
+        await model.submit()
+
+        XCTAssertTrue(model.showsSubmissionConfirmation)
+        XCTAssertEqual(submitter.requests.count, 1)
+        XCTAssertTrue(submitter.requests[0].includeTechnicalDetails)
+
+        model.sendWithoutUnsupportedPayloads()
+        await model.confirmationActionTask?.value
+
+        XCTAssertFalse(model.showsSubmissionConfirmation)
+        XCTAssertTrue(model.isSubmitted)
+        XCTAssertEqual(submitter.requests.count, 2)
+        XCTAssertFalse(submitter.requests[1].includeTechnicalDetails)
+    }
+
+    func testLogsConfirmationCanUseAlternateDelivery() async throws {
+        let pendingDelivery = FeedbackPendingDelivery.email(
+            FeedbackPendingEmail(
+                recipients: ["support@example.com"],
+                subject: "JustCards Report",
+                body: "Email logs",
+                attachments: []
+            )
+        )
+        let submitter = MockFeedbackSubmitter(
+            outcome: .needsConfirmation(
+                FeedbackSubmissionConfirmation(
+                    unsupported: [.files],
+                    alternateDelivery: pendingDelivery
+                )
+            ),
+            supportOptions: FeedbackFormSupportOptions(
+                allowsTechnicalDetails: true
+            )
+        )
+        var handledDeliveries: [FeedbackPendingDelivery] = []
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug,
+            deliveryHandler: { delivery in
+                handledDeliveries.append(delivery)
+                return true
+            }
+        )
+        model.notes = "Need help"
+
+        await model.submit()
+        model.sendUsingAlternateDelivery()
+        await model.confirmationActionTask?.value
+
+        XCTAssertEqual(handledDeliveries, [pendingDelivery])
+        XCTAssertTrue(model.isSubmitted)
+        XCTAssertFalse(model.showsSubmissionConfirmation)
+    }
+
+    func testCancelledAlternateDeliveryCleansUpTemporaryFiles() async throws {
+        let temporaryDirectoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectoryURL, withIntermediateDirectories: true)
+
+        let submitter = MockFeedbackSubmitter(
+            outcome: .needsConfirmation(
+                FeedbackSubmissionConfirmation(
+                    unsupported: [.images],
+                    alternateDelivery: .share(
+                        FeedbackPendingShare(
+                            subject: "JustCards Report",
+                            message: "Share logs",
+                            itemURLs: [],
+                            temporaryDirectoryURL: temporaryDirectoryURL
+                        )
+                    )
+                )
+            ),
+            supportOptions: FeedbackFormSupportOptions(
+                allowsTechnicalDetails: true
+            )
+        )
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug,
+            deliveryHandler: { _ in false }
+        )
+        model.notes = "Need help"
+
+        await model.submit()
+        model.sendUsingAlternateDelivery()
+        await model.confirmationActionTask?.value
+
+        XCTAssertFalse(model.isSubmitted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryDirectoryURL.path))
+    }
+
+    func testLogsConfirmationWithoutHandlerShowsErrorForAlternateDelivery() async throws {
+        let temporaryDirectoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectoryURL, withIntermediateDirectories: true)
+
+        let submitter = MockFeedbackSubmitter(
+            outcome: .needsConfirmation(
+                FeedbackSubmissionConfirmation(
+                    unsupported: [.images],
+                    alternateDelivery: .share(
+                        FeedbackPendingShare(
+                            subject: "JustCards Report",
+                            message: "Share logs",
+                            itemURLs: [],
+                            temporaryDirectoryURL: temporaryDirectoryURL
+                        )
+                    )
+                )
+            ),
+            supportOptions: FeedbackFormSupportOptions(
+                allowsTechnicalDetails: true
+            )
+        )
+        let model = makeModel(
+            submitter: submitter,
+            supportOptions: submitter.feedbackFormSupportOptions,
+            policy: .clientDebug
+        )
+        model.notes = "Need help"
+
+        await model.submit()
+        model.sendUsingAlternateDelivery()
+        await model.confirmationActionTask?.value
+
+        XCTAssertEqual(model.errorMessage, FeedbackFormCopy.standard.submissionErrorMessage)
+        XCTAssertFalse(model.isSubmitted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryDirectoryURL.path))
     }
 
     func testFeedbackFormClientInitializerStillBuildsWithoutDiagnostics() {
@@ -627,18 +800,23 @@ private final class MockFeedbackSubmitter: FeedbackSubmitting, FeedbackFormSuppo
     let feedbackSubmissionRoute: FeedbackSubmissionRoute
     let feedbackFormPolicy: FeedbackFormPolicy
 
-    private let outcome: FeedbackSubmissionOutcome
+    private let outcomes: [FeedbackSubmissionOutcome]
     private let screenshots: [FeedbackScreenshot]
 
     init(
         outcome: FeedbackSubmissionOutcome = .submitted(
             AppReportSubmissionResponse(accepted: true, statusCode: 202)
         ),
+        outcomes: [FeedbackSubmissionOutcome]? = nil,
         supportOptions: FeedbackFormSupportOptions = .disabled,
         route: FeedbackSubmissionRoute = .endpoint,
         screenshots: [FeedbackScreenshot] = []
     ) {
-        self.outcome = outcome
+        if let outcomes, !outcomes.isEmpty {
+            self.outcomes = outcomes
+        } else {
+            self.outcomes = [outcome]
+        }
         feedbackFormSupportOptions = supportOptions
         feedbackSubmissionRoute = route
         self.screenshots = screenshots
@@ -647,7 +825,8 @@ private final class MockFeedbackSubmitter: FeedbackSubmitting, FeedbackFormSuppo
 
     func submit(_ request: FeedbackSubmissionRequest) async throws -> FeedbackSubmissionOutcome {
         requests.append(request)
-        return outcome
+        let index = min(requests.count - 1, outcomes.count - 1)
+        return outcomes[index]
     }
 }
 
