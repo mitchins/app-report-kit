@@ -249,6 +249,7 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
         }
     }
 
+    /// Returns screenshots from the provider configured for this diagnostics submission flow.
     public func makeScreenshots() throws -> [FeedbackScreenshot] {
         try screenshotProvider?.makeScreenshots() ?? []
     }

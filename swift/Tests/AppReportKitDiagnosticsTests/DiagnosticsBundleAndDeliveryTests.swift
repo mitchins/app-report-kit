@@ -333,7 +333,17 @@ final class DiagnosticsBundleAndDeliveryTests: XCTestCase {
 
         XCTAssertEqual(screenshots.count, 1)
         XCTAssertEqual(screenshots.first?.filename, "screenshot-1.png")
+        XCTAssertEqual(screenshots.first?.contentType, "image/png")
         XCTAssertEqual(screenshots.first?.data, Data("png".utf8))
+    }
+
+    func testDiagnosticsSubmitterReturnsNoScreenshotsWithoutConfiguredProvider() throws {
+        let submitter = AppReportDiagnosticsSubmitter(
+            reportBuilder: makeReportBuilder(),
+            delivery: .custom(RecordingSubmissionHandler(), emailFallback: nil)
+        )
+
+        XCTAssertTrue(try submitter.makeScreenshots().isEmpty)
     }
 
     func testCustomDeliveryWithoutLogsSkipsDiagnosticsBundle() async throws {
