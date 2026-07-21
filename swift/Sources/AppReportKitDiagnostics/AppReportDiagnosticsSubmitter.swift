@@ -111,7 +111,7 @@ public enum DiagnosticsDeliveryPlatform: String, Sendable {
     }
 }
 
-public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackSubmitting, FeedbackFormSupportProviding, FeedbackFormPolicyProviding, FeedbackSubmissionRouteProviding {
+public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackSubmitting, FeedbackFormSupportProviding, FeedbackFormPolicyProviding, FeedbackSubmissionRouteProviding, FeedbackScreenshotProviding {
     public struct Support {
         public let diagnosticsProvider: FeedbackDiagnosticsProvider?
         public let networkRecorder: NetworkRecorder?
@@ -247,6 +247,10 @@ public final class AppReportDiagnosticsSubmitter: @unchecked Sendable, FeedbackS
                 return .unavailable
             }
         }
+    }
+
+    public func makeScreenshots() throws -> [FeedbackScreenshot] {
+        try screenshotProvider?.makeScreenshots() ?? []
     }
 
     public func submit(_ request: FeedbackSubmissionRequest) async throws -> FeedbackSubmissionOutcome {
